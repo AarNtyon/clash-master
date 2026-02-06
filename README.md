@@ -11,9 +11,9 @@
 
 <p align="center">
   <a href="https://github.com/foru17/clash-master/stargazers"><img src="https://img.shields.io/github/stars/foru17/clash-master?style=flat-square&color=yellow" alt="Stars"></a>
-  <a href="https://github.com/foru17/clash-master/releases"><img src="https://img.shields.io/github/v/release/foru17/clash-master?style=flat-square&color=blue" alt="Release"></a>
+  <a href="https://hub.docker.com/r/foru17/clash-master"><img src="https://img.shields.io/docker/pulls/foru17/clash-master?style=flat-square&color=blue&logo=docker" alt="Docker Pulls"></a>
+  <a href="https://hub.docker.com/r/foru17/clash-master"><img src="https://img.shields.io/docker/v/foru17/clash-master?style=flat-square&label=Docker&color=2496ED" alt="Docker Version"></a>
   <a href="https://github.com/foru17/clash-master/blob/main/LICENSE"><img src="https://img.shields.io/github/license/foru17/clash-master?style=flat-square&color=green" alt="License"></a>
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker" alt="Docker">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=flat-square&logo=node.js" alt="Node.js">
 </p>
 
@@ -71,42 +71,49 @@
 
 ### 方式一：Docker Compose（推荐）
 
-```bash
-# 1. 克隆项目
-git clone https://github.com/foru17/clash-master.git
-cd clash-master
+无需克隆代码，只需创建一个 `docker-compose.yml` 文件即可：
 
-# 2. 构建并启动服务
-docker compose up -d --build
-
-# 3. 访问 http://localhost:3000 完成配置
+```yaml
+services:
+  clash-master:
+    image: foru17/clash-master:latest
+    container_name: clash-master
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # Web UI
+      - "3001:3001"   # API
+      - "3002:3002"   # WebSocket
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - API_PORT=3001
+      - WS_PORT=3002
+      - DB_PATH=/app/data/stats.db
 ```
+
+然后运行：
+
+```bash
+docker compose up -d
+```
+
+访问 `http://localhost:3000` 即可开始使用。
 
 ### 方式二：Docker 直接运行
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/foru17/clash-master.git
-cd clash-master
-
-# 2. 构建镜像
-docker build -t clash-master:latest .
-
-# 3. 创建数据目录并运行容器
-mkdir -p clash-master-data
 docker run -d \
   --name clash-master \
   -p 3000:3000 \
   -p 3001:3001 \
   -p 3002:3002 \
-  -v $(pwd)/clash-master-data:/app/data \
+  -v $(pwd)/data:/app/data \
   --restart unless-stopped \
-  clash-master:latest
-
-# 4. 访问 http://localhost:3000 完成配置
+  foru17/clash-master:latest
 ```
 
-> 💡 **Note**: 镜像将很快发布到 GHCR，届时可直接使用 `ghcr.io/foru17/clash-master:latest`
+访问 `http://localhost:3000` 即可开始使用。
 
 ### 方式三：源码运行
 
@@ -173,13 +180,12 @@ services:
 ### 更新到最新版本
 
 ```bash
-# Docker Compose（本地构建）
-docker compose up -d --build
-
-# Docker Compose（远程镜像，待发布）
+# 拉取最新镜像并重新启动
 docker compose pull
 docker compose up -d
 ```
+
+> 💡 每次推送到 `main` 分支或打 Tag 时，GitHub Actions 会自动构建并推送新镜像到 [Docker Hub](https://hub.docker.com/r/foru17/clash-master)。
 
 ## 📁 项目结构
 

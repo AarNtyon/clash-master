@@ -11,9 +11,9 @@
 
 <p align="center">
   <a href="https://github.com/foru17/clash-master/stargazers"><img src="https://img.shields.io/github/stars/foru17/clash-master?style=flat-square&color=yellow" alt="Stars"></a>
-  <a href="https://github.com/foru17/clash-master/releases"><img src="https://img.shields.io/github/v/release/foru17/clash-master?style=flat-square&color=blue" alt="Release"></a>
+  <a href="https://hub.docker.com/r/foru17/clash-master"><img src="https://img.shields.io/docker/pulls/foru17/clash-master?style=flat-square&color=blue&logo=docker" alt="Docker Pulls"></a>
+  <a href="https://hub.docker.com/r/foru17/clash-master"><img src="https://img.shields.io/docker/v/foru17/clash-master?style=flat-square&label=Docker&color=2496ED" alt="Docker Version"></a>
   <a href="https://github.com/foru17/clash-master/blob/main/LICENSE"><img src="https://img.shields.io/github/license/foru17/clash-master?style=flat-square&color=green" alt="License"></a>
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker" alt="Docker">
   <img src="https://img.shields.io/badge/Node.js-22-339933?style=flat-square&logo=node.js" alt="Node.js">
 </p>
 
@@ -71,42 +71,49 @@ Throughout the entire development process, I didn't write a single line of code 
 
 ### Option 1: Docker Compose (Recommended)
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/foru17/clash-master.git
-cd clash-master
+No need to clone the repo. Just create a `docker-compose.yml` file:
 
-# 2. Build and start services
-docker compose up -d --build
-
-# 3. Open http://localhost:3000 to configure
+```yaml
+services:
+  clash-master:
+    image: foru17/clash-master:latest
+    container_name: clash-master
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # Web UI
+      - "3001:3001"   # API
+      - "3002:3002"   # WebSocket
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - API_PORT=3001
+      - WS_PORT=3002
+      - DB_PATH=/app/data/stats.db
 ```
+
+Then run:
+
+```bash
+docker compose up -d
+```
+
+Open `http://localhost:3000` to get started.
 
 ### Option 2: Docker Run
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/foru17/clash-master.git
-cd clash-master
-
-# 2. Build the image
-docker build -t clash-master:latest .
-
-# 3. Create data directory and run container
-mkdir -p clash-master-data
 docker run -d \
   --name clash-master \
   -p 3000:3000 \
   -p 3001:3001 \
   -p 3002:3002 \
-  -v $(pwd)/clash-master-data:/app/data \
+  -v $(pwd)/data:/app/data \
   --restart unless-stopped \
-  clash-master:latest
-
-# 4. Open http://localhost:3000 to configure
+  foru17/clash-master:latest
 ```
 
-> 💡 **Note**: Images will soon be published to GHCR, then you can use `ghcr.io/foru17/clash-master:latest` directly.
+Open `http://localhost:3000` to get started.
 
 ### Option 3: Source Code
 
@@ -173,13 +180,12 @@ services:
 ### Update to Latest
 
 ```bash
-# Docker Compose (local build)
-docker compose up -d --build
-
-# Docker Compose (remote image, coming soon)
+# Pull the latest image and restart
 docker compose pull
 docker compose up -d
 ```
+
+> 💡 New images are automatically built and pushed to [Docker Hub](https://hub.docker.com/r/foru17/clash-master) on every push to `main` or new tag.
 
 ## 📁 Project Structure
 
