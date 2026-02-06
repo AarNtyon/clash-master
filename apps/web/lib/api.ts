@@ -8,7 +8,7 @@ import type {
   HourlyStats,
   DailyStats,
   TrafficTrendPoint,
-} from "@clashstats/shared";
+} from "@clashmaster/shared";
 
 const API_BASE = "/api";
 

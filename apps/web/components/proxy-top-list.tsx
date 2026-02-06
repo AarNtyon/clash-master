@@ -7,7 +7,7 @@ import { OverviewCard } from "./overview-card";
 import { TopListItem } from "./top-list-item";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/utils";
-import type { ProxyStats } from "@clashstats/shared";
+import type { ProxyStats } from "@clashmaster/shared";
 
 interface ProxyTopListProps {
   data: ProxyStats[];

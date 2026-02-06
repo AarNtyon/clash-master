@@ -1,9 +1,10 @@
 services:
   clash-master:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: clash-master:latest
+    image: foru17/clash-master:latest
+    # Uncomment below to build locally instead of pulling from Docker Hub
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: clash-master
     restart: unless-stopped
     ports:

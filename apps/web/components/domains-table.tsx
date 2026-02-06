@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Favicon } from "@/components/favicon";
 import { formatBytes, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import type { DomainStats } from "@clashstats/shared";
+import type { DomainStats } from "@clashmaster/shared";
 import {
   DropdownMenu,
   DropdownMenuContent,

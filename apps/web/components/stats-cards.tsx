@@ -3,7 +3,7 @@
 import { Download, Upload, Globe, Activity, Server, Route } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { formatBytes } from "@/lib/utils";
-import type { StatsSummary } from "@clashstats/shared";
+import type { StatsSummary } from "@clashmaster/shared";
 
 interface StatsCardsProps {
   data: StatsSummary | null;

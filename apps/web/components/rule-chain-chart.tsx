@@ -5,7 +5,7 @@ import { Network, ArrowRight } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBytes } from "@/lib/utils";
-import type { RuleStats } from "@clashstats/shared";
+import type { RuleStats } from "@clashmaster/shared";
 
 interface RuleChainChartProps {
   data: RuleStats[];

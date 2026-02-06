@@ -3,7 +3,7 @@ FROM node:22-alpine AS base
 
 # Install pnpm and build tools for native modules
 RUN apk add --no-cache python3 make g++ gcc && \
-    npm install -g pnpm@9.15.5
+    npm install -g pnpm@9.15.9
 
 # Set working directory
 WORKDIR /app
@@ -21,13 +21,13 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 # Build shared package first
-RUN pnpm --filter @clashstats/shared build
+RUN pnpm --filter @clashmaster/shared build
 
 # Build collector
-RUN pnpm --filter @clashstats/collector build
+RUN pnpm --filter @clashmaster/collector build
 
 # Build web
-RUN pnpm --filter @clashstats/web build
+RUN pnpm --filter @clashmaster/web build
 
 # Production stage
 FROM node:22-alpine AS production

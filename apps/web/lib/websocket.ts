@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { StatsSummary } from '@clashstats/shared';
+import type { StatsSummary } from '@clashmaster/shared';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 

@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Link2, ArrowDown, ArrowUp } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
-import type { CountryStats } from "@clashstats/shared";
+import type { CountryStats } from "@clashmaster/shared";
 
 interface CountryTrafficListProps {
   data: CountryStats[];

@@ -6,7 +6,7 @@ import { Globe, Link2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBytes } from "@/lib/utils";
-import type { CountryStats } from "@clashstats/shared";
+import type { CountryStats } from "@clashmaster/shared";
 
 interface CountryTrafficChartProps {
   data: CountryStats[];

@@ -31,7 +31,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { api, getPresetTimeRange, type TimeRange, type Backend } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { StatsSummary, CountryStats } from "@clashstats/shared";
+import type { StatsSummary, CountryStats } from "@clashmaster/shared";
 
 function formatTimeAgo(date: Date, t: any): string {
   const now = new Date();

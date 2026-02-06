@@ -5,7 +5,7 @@ import { Server, ArrowRight, BarChart3, Link2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { cn, formatBytes } from "@/lib/utils";
-import type { ProxyStats } from "@clashstats/shared";
+import type { ProxyStats } from "@clashmaster/shared";
 
 interface TopProxiesSimpleProps {
   proxies: ProxyStats[];
@@ -42,6 +42,16 @@ export const TopProxiesSimple = React.memo(function TopProxiesSimple({
     
     return sorted.slice(0, 6);
   }, [proxies, sortBy]);
+
+  const maxTotal = useMemo(() => {
+    if (!sortedProxies.length) return 1;
+    return Math.max(...sortedProxies.map(p => p.totalDownload + p.totalUpload));
+  }, [sortedProxies]);
+
+  const totalTraffic = useMemo(() => {
+    if (!proxies?.length) return 1;
+    return proxies.reduce((sum, p) => sum + p.totalDownload + p.totalUpload, 0);
+  }, [proxies]);
 
   return (
     <div className="space-y-3 h-full flex flex-col">
@@ -98,6 +108,9 @@ export const TopProxiesSimple = React.memo(function TopProxiesSimple({
             ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
             : "bg-muted text-muted-foreground";
 
+          const barPercent = (total / maxTotal) * 100;
+          const sharePercent = (total / totalTraffic) * 100;
+
           return (
             <div
               key={proxyItem.chain}
@@ -121,16 +134,31 @@ export const TopProxiesSimple = React.memo(function TopProxiesSimple({
                 </span>
               </div>
 
-              {/* Row 2: Download | Upload | Connections */}
-              <div className="flex items-center justify-between text-xs text-muted-foreground pl-7">
-                <div className="flex items-center gap-3">
-                  <span className="text-blue-500 dark:text-blue-400">↓ {formatBytes(proxyItem.totalDownload)}</span>
-                  <span className="text-purple-500 dark:text-purple-400">↑ {formatBytes(proxyItem.totalUpload)}</span>
+              {/* Row 2: Progress bar + Stats */}
+              <div className="pl-7 space-y-1.5">
+                {/* Progress bar */}
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden flex">
+                  <div 
+                    className="h-full bg-blue-500 dark:bg-blue-400" 
+                    style={{ width: `${(proxyItem.totalDownload / total) * barPercent}%` }}
+                  />
+                  <div 
+                    className="h-full bg-purple-500 dark:bg-purple-400" 
+                    style={{ width: `${(proxyItem.totalUpload / total) * barPercent}%` }}
+                  />
                 </div>
-                <span className="flex items-center gap-1 tabular-nums">
-                  <Link2 className="w-3 h-3" />
-                  {proxyItem.totalConnections}
-                </span>
+                {/* Stats */}
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-500 dark:text-blue-400">↓ {formatBytes(proxyItem.totalDownload)}</span>
+                    <span className="text-purple-500 dark:text-purple-400">↑ {formatBytes(proxyItem.totalUpload)}</span>
+                    <span className="flex items-center gap-1 tabular-nums">
+                      <Link2 className="w-3 h-3" />
+                      {proxyItem.totalConnections}
+                    </span>
+                  </div>
+                  <span className="tabular-nums">{sharePercent.toFixed(1)}%</span>
+                </div>
               </div>
             </div>
           );

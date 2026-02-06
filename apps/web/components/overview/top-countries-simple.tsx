@@ -5,7 +5,7 @@ import { Globe, ArrowRight } from "lucide-react";
 import { useTranslations, useLocale } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { formatBytes, cn } from "@/lib/utils";
-import type { CountryStats } from "@clashstats/shared";
+import type { CountryStats } from "@clashmaster/shared";
 
 interface TopCountriesSimpleProps {
   countries: CountryStats[];
@@ -82,6 +82,11 @@ export const TopCountriesSimple = React.memo(function TopCountriesSimple({
     return Math.max(...sortedCountries.map(c => c.totalDownload + c.totalUpload));
   }, [sortedCountries]);
 
+  const totalTraffic = useMemo(() => {
+    if (!countries?.length) return 1;
+    return countries.reduce((sum, c) => sum + c.totalDownload + c.totalUpload, 0);
+  }, [countries]);
+
   return (
     <div className="space-y-3 h-full flex flex-col">
       {/* Header */}
@@ -96,7 +101,8 @@ export const TopCountriesSimple = React.memo(function TopCountriesSimple({
       <div className="space-y-2 flex-1">
         {sortedCountries.map((country, index) => {
           const total = country.totalDownload + country.totalUpload;
-          const percent = (total / maxTotal) * 100;
+          const barPercent = (total / maxTotal) * 100;
+          const sharePercent = (total / totalTraffic) * 100;
           const badgeColor = index === 0
             ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
             : index === 1
@@ -133,11 +139,11 @@ export const TopCountriesSimple = React.memo(function TopCountriesSimple({
                 <div className="h-1.5 rounded-full bg-muted overflow-hidden flex">
                   <div 
                     className="h-full bg-blue-500 dark:bg-blue-400" 
-                    style={{ width: `${(country.totalDownload / total) * percent}%` }}
+                    style={{ width: `${(country.totalDownload / total) * barPercent}%` }}
                   />
                   <div 
                     className="h-full bg-purple-500 dark:bg-purple-400" 
-                    style={{ width: `${(country.totalUpload / total) * percent}%` }}
+                    style={{ width: `${(country.totalUpload / total) * barPercent}%` }}
                   />
                 </div>
                 {/* Stats */}
@@ -146,7 +152,7 @@ export const TopCountriesSimple = React.memo(function TopCountriesSimple({
                     <span className="text-blue-500 dark:text-blue-400">↓ {formatBytes(country.totalDownload)}</span>
                     <span className="text-purple-500 dark:text-purple-400">↑ {formatBytes(country.totalUpload)}</span>
                   </div>
-                  <span className="tabular-nums">{percent.toFixed(0)}%</span>
+                  <span className="tabular-nums">{sharePercent.toFixed(1)}%</span>
                 </div>
               </div>
             </div>

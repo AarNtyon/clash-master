@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import type { ConnectionsData } from '@clashstats/shared';
+import type { ConnectionsData } from '@clashmaster/shared';
 import { StatsDatabase } from './db.js';
 import { GeoIPService } from './geo-service.js';
 

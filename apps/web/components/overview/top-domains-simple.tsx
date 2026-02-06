@@ -5,7 +5,7 @@ import { Globe, ArrowRight, BarChart3, Link2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { cn, formatBytes } from "@/lib/utils";
-import type { DomainStats } from "@clashstats/shared";
+import type { DomainStats } from "@clashmaster/shared";
 
 interface TopDomainsSimpleProps {
   domains: DomainStats[];
@@ -44,6 +44,7 @@ export const TopDomainsSimple = React.memo(function TopDomainsSimple({
     
     return sorted.slice(0, 6);
   }, [domains, sortBy]);
+
 
   return (
     <div className="space-y-3 h-full flex flex-col">
@@ -104,8 +105,7 @@ export const TopDomainsSimple = React.memo(function TopDomainsSimple({
               key={domain.domain}
               className="p-2.5 rounded-xl border border-border/50 bg-card/50 hover:bg-card transition-colors"
             >
-              {/* Row 1: Rank + Icon + Domain + Total */}
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex items-center gap-2">
                 <span className={cn(
                   "w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center shrink-0",
                   badgeColor
@@ -140,16 +140,16 @@ export const TopDomainsSimple = React.memo(function TopDomainsSimple({
                 </span>
               </div>
 
-              {/* Row 2: Download | Upload | Connections */}
-              <div className="flex items-center justify-between text-xs text-muted-foreground pl-7">
-                <div className="flex items-center gap-3">
+              {/* Stats */}
+              <div className="pl-12 mt-1">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="text-blue-500 dark:text-blue-400">↓ {formatBytes(domain.totalDownload)}</span>
                   <span className="text-purple-500 dark:text-purple-400">↑ {formatBytes(domain.totalUpload)}</span>
+                  <span className="flex items-center gap-1 tabular-nums">
+                    <Link2 className="w-3 h-3" />
+                    {domain.totalConnections}
+                  </span>
                 </div>
-                <span className="flex items-center gap-1 tabular-nums">
-                  <Link2 className="w-3 h-3" />
-                  {domain.totalConnections}
-                </span>
               </div>
             </div>
           );

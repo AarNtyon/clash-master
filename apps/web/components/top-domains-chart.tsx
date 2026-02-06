@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Favicon } from "@/components/favicon";
 import { formatBytes } from "@/lib/utils";
-import type { DomainStats } from "@clashstats/shared";
+import type { DomainStats } from "@clashmaster/shared";
 
 interface TopDomainsChartProps {
   data: DomainStats[];

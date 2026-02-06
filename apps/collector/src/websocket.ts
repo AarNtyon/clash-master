@@ -1,5 +1,5 @@
 import { WebSocketServer as WSServer, WebSocket } from 'ws';
-import type { StatsSummary } from '@clashstats/shared';
+import type { StatsSummary } from '@clashmaster/shared';
 import type { StatsDatabase } from './db.js';
 
 export interface WebSocketMessage {

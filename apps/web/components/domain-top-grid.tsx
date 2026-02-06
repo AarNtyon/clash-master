@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/utils";
-import type { DomainStats } from "@clashstats/shared";
+import type { DomainStats } from "@clashmaster/shared";
 
 interface DomainTopGridProps {
   data: DomainStats[];

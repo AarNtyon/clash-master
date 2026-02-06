@@ -184,10 +184,12 @@
     "license": "MIT License",
     "currentVersion": "Current Version",
     "latestVersion": "Latest Version",
-    "updateAvailable": "Update Available",
+    "updateAvailable": "New version available",
     "upToDate": "Up to date",
     "checkingUpdate": "Checking...",
     "checkNow": "Check",
+    "newVersion": "New Version",
+    "goToUpdate": "Go to update",
     "viewOnGitHub": "View on GitHub"
   },
   "common": {

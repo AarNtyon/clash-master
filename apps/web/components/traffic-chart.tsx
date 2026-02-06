@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useTranslations } from "next-intl";
-import type { HourlyStats } from "@clashstats/shared";
+import type { HourlyStats } from "@clashmaster/shared";
 import { formatBytes } from "@/lib/utils";
 
 interface TrafficChartProps {

@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import type { Connection, DomainStats, IPStats, HourlyStats, DailyStats, ProxyStats, RuleStats } from '@clashstats/shared';
+import type { Connection, DomainStats, IPStats, HourlyStats, DailyStats, ProxyStats, RuleStats } from '@clashmaster/shared';
 
 export interface TrafficUpdate {
   domain: string;

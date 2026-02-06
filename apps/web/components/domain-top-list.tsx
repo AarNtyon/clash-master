@@ -7,7 +7,7 @@ import { OverviewCard } from "./overview-card";
 import { TopListItem } from "./top-list-item";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/utils";
-import type { DomainStats } from "@clashstats/shared";
+import type { DomainStats } from "@clashmaster/shared";
 
 interface DomainTopListProps {
   data: DomainStats[];

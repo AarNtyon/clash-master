@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# ClashStats 启动脚本
+# Clash Master 启动脚本
 
 set -e
 

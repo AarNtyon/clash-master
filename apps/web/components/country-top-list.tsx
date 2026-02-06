@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { OverviewCard } from "./overview-card";
 import { TopListItem } from "./top-list-item";
 import { Button } from "@/components/ui/button";
-import type { CountryStats } from "@clashstats/shared";
+import type { CountryStats } from "@clashmaster/shared";
 
 interface CountryTopListProps {
   data: CountryStats[];

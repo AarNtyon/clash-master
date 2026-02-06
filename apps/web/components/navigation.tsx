@@ -28,14 +28,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useVersionCheck } from "@/hooks/use-version-check";
-import packageJson from "../package.json";
 
 interface NavigationProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
 }
 
-const APP_VERSION = packageJson.version;
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0";
 const GITHUB_URL = "https://github.com/foru17/clash-master";
 
 const NAV_ITEMS = [
@@ -114,12 +113,12 @@ export function Navigation({ activeTab, onTabChange }: NavigationProps) {
             <Info className="w-5 h-5" />
             {aboutT("title")}
             {hasUpdate && (
-              <span className="ml-auto flex items-center gap-1.5 text-xs text-emerald-500 font-medium">
-                <span className="relative flex h-2 w-2">
+              <span className="ml-auto flex items-center gap-1.5 text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full">
+                <span className="relative flex h-1.5 w-1.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
                 </span>
-                v{latestVersion}
+                {aboutT("newVersion")}
               </span>
             )}
           </button>
@@ -269,70 +268,59 @@ export function Navigation({ activeTab, onTabChange }: NavigationProps) {
               </div>
 
               {/* Latest Version / Update Status */}
-              <div
-                className={cn(
-                  "flex items-center justify-between p-3 rounded-xl border min-h-[3rem]",
-                  hasUpdate
-                    ? "bg-emerald-500/5 border-emerald-500/20"
-                    : "bg-secondary/50 border-border/50",
-                )}>
-                <span className="text-sm font-medium">
-                  {aboutT("latestVersion")}
-                </span>
-                <div className="flex items-center gap-2 h-7 min-w-[5.5rem] justify-end">
-                  {isChecking ? (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      {aboutT("checkingUpdate")}
+              {hasUpdate && latestVersion ? (
+                <a
+                  href={GITHUB_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between p-3 rounded-xl border min-h-[3rem] bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10 transition-colors group"
+                >
+                  <div>
+                    <span className="text-sm font-medium">
+                      {aboutT("latestVersion")}
                     </span>
-                  ) : hasUpdate && latestVersion ? (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {aboutT("updateAvailable")} · v{APP_VERSION} → v{latestVersion}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 h-7 shrink-0">
                     <span className="text-sm font-mono tabular-nums text-emerald-500 font-semibold flex items-center gap-1.5">
-                      <ArrowUpCircle className="w-4 h-4" />v{latestVersion}
+                      <ArrowUpCircle className="w-4 h-4" />
+                      v{latestVersion}
                     </span>
-                  ) : latestVersion ? (
-                    <span className="text-sm text-muted-foreground">
-                      ✓ {aboutT("upToDate")}
-                    </span>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      onClick={checkNow}>
-                      <RefreshCw className="w-3 h-3 mr-1" />
-                      {aboutT("checkNow")}
-                    </Button>
-                  )}
+                    <ExternalLink className="w-3.5 h-3.5 text-emerald-500 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </a>
+              ) : (
+                <div
+                  className="flex items-center justify-between p-3 rounded-xl border min-h-[3rem] bg-secondary/50 border-border/50"
+                >
+                  <span className="text-sm font-medium">
+                    {aboutT("latestVersion")}
+                  </span>
+                  <div className="flex items-center gap-2 h-7 min-w-[5.5rem] justify-end">
+                    {isChecking ? (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        {aboutT("checkingUpdate")}
+                      </span>
+                    ) : latestVersion ? (
+                      <span className="text-sm text-muted-foreground">
+                        ✓ {aboutT("upToDate")}
+                      </span>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={checkNow}>
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                        {aboutT("checkNow")}
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-
-              {/* Update Available Banner */}
-              <div
-                className={cn(
-                  "grid transition-all duration-200 ease-in-out",
-                  hasUpdate && latestVersion
-                    ? "grid-rows-[1fr] opacity-100"
-                    : "grid-rows-[0fr] opacity-0",
-                )}>
-                <div className="overflow-hidden">
-                  <a
-                    href={`${GITHUB_URL}/releases`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-colors group">
-                    <ArrowUpCircle className="w-5 h-5 text-emerald-500 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                        {aboutT("updateAvailable")}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        v{APP_VERSION} → v{latestVersion}
-                      </p>
-                    </div>
-                    <ExternalLink className="w-4 h-4 text-emerald-500 group-hover:translate-x-0.5 transition-transform shrink-0" />
-                  </a>
-                </div>
-              </div>
+              )}
 
               {/* License */}
               <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/50 border border-border/50">

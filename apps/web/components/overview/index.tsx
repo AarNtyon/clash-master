@@ -6,7 +6,7 @@ import { TopProxiesSimple } from "./top-proxies-simple";
 import { TopCountriesSimple } from "./top-countries-simple";
 import { TrafficTrendChart } from "@/components/traffic-trend-chart";
 import { api } from "@/lib/api";
-import type { DomainStats, ProxyStats, CountryStats, TrafficTrendPoint } from "@clashstats/shared";
+import type { DomainStats, ProxyStats, CountryStats, TrafficTrendPoint } from "@clashmaster/shared";
 
 type TrendTimeRange = "30m" | "1h" | "24h";
 
