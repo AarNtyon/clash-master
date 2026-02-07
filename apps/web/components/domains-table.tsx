@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Search, ArrowUpDown, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Rows3, ChevronDown, ChevronUp, Globe, Server, Waypoints, Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 interface DomainsTableProps {
-  data: DomainStats[];
+  activeBackendId?: number;
 }
 
 type SortKey = "domain" | "totalDownload" | "totalUpload" | "totalConnections" | "lastSeen";
@@ -56,9 +56,13 @@ function getCountryFlag(country: string): string {
   return COUNTRY_FLAGS[country] || COUNTRY_FLAGS[country.toUpperCase()] || "🌐";
 }
 
-export function DomainsTable({ data }: DomainsTableProps) {
+export function DomainsTable({ activeBackendId }: DomainsTableProps) {
   const t = useTranslations("domains");
+  const [data, setData] = useState<DomainStats[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("totalDownload");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -68,10 +72,51 @@ export function DomainsTable({ data }: DomainsTableProps) {
   const [proxyStatsLoading, setProxyStatsLoading] = useState<string | null>(null);
   const [ipDetails, setIPDetails] = useState<Record<string, IPStats[]>>({});
   const [ipDetailsLoading, setIPDetailsLoading] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce search input
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setCurrentPage(1);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search]);
+
+  // Fetch data from server
+  useEffect(() => {
+    let cancelled = false;
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const result = await api.getDomains(activeBackendId, {
+          offset: (currentPage - 1) * pageSize,
+          limit: pageSize,
+          sortBy: sortKey,
+          sortOrder,
+          search: debouncedSearch || undefined,
+        });
+        if (!cancelled) {
+          setData(result.data);
+          setTotal(result.total);
+        }
+      } catch (err) {
+        console.error("Failed to fetch domains:", err);
+        if (!cancelled) {
+          setData([]);
+          setTotal(0);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    fetchData();
+    return () => { cancelled = true; };
+  }, [activeBackendId, currentPage, pageSize, sortKey, sortOrder, debouncedSearch]);
 
   // Fetch proxy stats when a domain is expanded
   const fetchProxyStats = useCallback(async (domain: string) => {
-    if (proxyStats[domain]) return; // Already cached
+    if (proxyStats[domain]) return;
     setProxyStatsLoading(domain);
     try {
       const stats = await api.getDomainProxyStats(domain);
@@ -86,7 +131,7 @@ export function DomainsTable({ data }: DomainsTableProps) {
 
   // Fetch IP details when a domain is expanded
   const fetchIPDetails = useCallback(async (domain: string) => {
-    if (ipDetails[domain]) return; // Already cached
+    if (ipDetails[domain]) return;
     setIPDetailsLoading(domain);
     try {
       const details = await api.getDomainIPDetails(domain);
@@ -109,33 +154,10 @@ export function DomainsTable({ data }: DomainsTableProps) {
     setCurrentPage(1);
   };
 
-  const filteredData = useMemo(() => {
-    return (data || [])
-      .filter((domain) =>
-        domain.domain.toLowerCase().includes(search.toLowerCase())
-      )
-      .sort((a, b) => {
-        const aValue = a[sortKey];
-        const bValue = b[sortKey];
-        const modifier = sortOrder === "asc" ? 1 : -1;
-        
-        if (typeof aValue === "string" && typeof bValue === "string") {
-          return aValue.localeCompare(bValue) * modifier;
-        }
-        return ((aValue as number) - (bValue as number)) * modifier;
-      });
-  }, [data, search, sortKey, sortOrder]);
-
-  // Pagination
-  const totalPages = Math.ceil(filteredData.length / pageSize);
-  const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredData.slice(start, start + pageSize);
-  }, [filteredData, currentPage, pageSize]);
+  const totalPages = Math.ceil(total / pageSize);
 
   const handleSearchChange = (value: string) => {
     setSearch(value);
-    setCurrentPage(1);
   };
 
   const handlePageSizeChange = (size: PageSize) => {
@@ -165,7 +187,7 @@ export function DomainsTable({ data }: DomainsTableProps) {
   const getPageNumbers = () => {
     const pages: (number | string)[] = [];
     const maxVisible = 5;
-    
+
     if (totalPages <= maxVisible) {
       for (let i = 1; i <= totalPages; i++) pages.push(i);
     } else {
@@ -196,7 +218,7 @@ export function DomainsTable({ data }: DomainsTableProps) {
           <div>
             <h3 className="text-lg font-semibold">{t("title")}</h3>
             <p className="text-sm text-muted-foreground">
-              {filteredData.length} {t("domainsCount")}
+              {total} {t("domainsCount")}
             </p>
           </div>
           <div className="relative">
@@ -213,7 +235,7 @@ export function DomainsTable({ data }: DomainsTableProps) {
 
       {/* Desktop Table Header - Hidden on mobile */}
       <div className="hidden sm:grid grid-cols-12 gap-3 px-5 py-3 bg-secondary/30 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        <div 
+        <div
           className="col-span-3 flex items-center cursor-pointer hover:text-foreground transition-colors"
           onClick={() => handleSort("domain")}
         >
@@ -223,21 +245,21 @@ export function DomainsTable({ data }: DomainsTableProps) {
         <div className="col-span-2 flex items-center">
           {t("proxy")}
         </div>
-        <div 
+        <div
           className="col-span-2 flex items-center justify-end cursor-pointer hover:text-foreground transition-colors"
           onClick={() => handleSort("totalDownload")}
         >
           {t("download")}
           <SortIcon column="totalDownload" />
         </div>
-        <div 
+        <div
           className="col-span-1 flex items-center justify-end cursor-pointer hover:text-foreground transition-colors"
           onClick={() => handleSort("totalUpload")}
         >
           {t("upload")}
           <SortIcon column="totalUpload" />
         </div>
-        <div 
+        <div
           className="col-span-1 flex items-center justify-end cursor-pointer hover:text-foreground transition-colors"
           onClick={() => handleSort("totalConnections")}
         >
@@ -280,14 +302,18 @@ export function DomainsTable({ data }: DomainsTableProps) {
 
       {/* Table Body */}
       <div className="divide-y divide-border/30 min-h-[300px]">
-        {paginatedData.length === 0 ? (
+        {loading && data.length === 0 ? (
+          <div className="px-5 py-12 text-center text-muted-foreground">
+            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+          </div>
+        ) : data.length === 0 ? (
           <div className="px-5 py-12 text-center text-muted-foreground">
             {t("noResults")}
           </div>
         ) : (
-          paginatedData.map((domain, index) => {
+          data.map((domain, index) => {
             const isExpanded = expandedDomain === domain.domain;
-            
+
             return (
               <div key={domain.domain} className="group">
                 {/* Desktop Row */}
@@ -362,8 +388,8 @@ export function DomainsTable({ data }: DomainsTableProps) {
                       size="sm"
                       className={cn(
                         "h-7 px-2 gap-1 text-xs font-medium transition-all",
-                        isExpanded 
-                          ? "bg-primary/10 text-primary hover:bg-primary/20" 
+                        isExpanded
+                          ? "bg-primary/10 text-primary hover:bg-primary/20"
                           : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
                       )}
                       onClick={(e) => {
@@ -403,8 +429,8 @@ export function DomainsTable({ data }: DomainsTableProps) {
                       size="sm"
                       className={cn(
                         "h-7 px-2 gap-1 text-xs font-medium shrink-0",
-                        isExpanded 
-                          ? "bg-primary/10 text-primary" 
+                        isExpanded
+                          ? "bg-primary/10 text-primary"
                           : "bg-secondary/50 text-muted-foreground"
                       )}
                       onClick={(e) => {
@@ -537,11 +563,11 @@ export function DomainsTable({ data }: DomainsTableProps) {
                             {(() => {
                               const totalIPTraffic = ipDetails[domain.domain].reduce((sum, ip) => sum + ip.totalDownload + ip.totalUpload, 0);
                               return ipDetails[domain.domain].map((ipStat) => {
-                                const flag = ipStat.geoIP && ipStat.geoIP.length > 0 
-                                  ? getCountryFlag(ipStat.geoIP[0]) 
+                                const flag = ipStat.geoIP && ipStat.geoIP.length > 0
+                                  ? getCountryFlag(ipStat.geoIP[0])
                                   : "🌐";
-                                const location = ipStat.geoIP && ipStat.geoIP.length > 1 
-                                  ? ipStat.geoIP[1] 
+                                const location = ipStat.geoIP && ipStat.geoIP.length > 1
+                                  ? ipStat.geoIP[1]
                                   : ipStat.geoIP?.[0] || null;
                                 const ipTraffic = ipStat.totalDownload + ipStat.totalUpload;
                                 const percent = totalIPTraffic > 0 ? (ipTraffic / totalIPTraffic) * 100 : 0;
@@ -642,19 +668,19 @@ export function DomainsTable({ data }: DomainsTableProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
               <span className="text-sm text-muted-foreground">
-                {t("total")} {filteredData.length}
+                {t("total")} {total}
               </span>
             </div>
-            
+
             {/* Pagination info and controls */}
             <div className="flex items-center gap-2 sm:gap-3">
               <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">
-                {t("showing")} {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredData.length)} {t("of")} {filteredData.length}
+                {t("showing")} {Math.min((currentPage - 1) * pageSize + 1, total)} - {Math.min(currentPage * pageSize, total)} {t("of")} {total}
               </p>
               <p className="text-xs text-muted-foreground sm:hidden">
-                {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredData.length)} / {filteredData.length}
+                {Math.min((currentPage - 1) * pageSize + 1, total)}-{Math.min(currentPage * pageSize, total)} / {total}
               </p>
-              
+
               <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
@@ -665,7 +691,7 @@ export function DomainsTable({ data }: DomainsTableProps) {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                
+
                 {getPageNumbers().map((page, idx) => (
                   page === '...' ? (
                     <span key={`ellipsis-${idx}`} className="px-1 sm:px-2 text-muted-foreground text-xs">...</span>
@@ -681,7 +707,7 @@ export function DomainsTable({ data }: DomainsTableProps) {
                     </Button>
                   )
                 ))}
-                
+
                 <Button
                   variant="ghost"
                   size="icon"

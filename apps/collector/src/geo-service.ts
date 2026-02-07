@@ -21,10 +21,10 @@ export class GeoIPService {
     resolve: (value: GeoLocation | null) => void;
   }[] = [];
   private isProcessing: boolean = false;
+  private processorTimer: NodeJS.Timeout | null = null;
 
   constructor(db: StatsDatabase) {
     this.db = db;
-    this.startQueueProcessor();
   }
 
   // Get geolocation for an IP (with caching)
@@ -80,43 +80,42 @@ export class GeoIPService {
   private async queryWithQueue(ip: string): Promise<GeoLocation | null> {
     return new Promise((resolve) => {
       this.queue.push({ ip, resolve });
+      this.scheduleProcessing();
     });
   }
 
-  // Process queue with rate limiting
-  private startQueueProcessor() {
-    const processQueue = async () => {
-      if (this.isProcessing || this.queue.length === 0) {
-        setTimeout(processQueue, 100);
-        return;
-      }
+  // Schedule queue processing (on-demand, no idle spinning)
+  private scheduleProcessing() {
+    if (this.processorTimer || this.isProcessing) return;
 
-      this.isProcessing = true;
-      const item = this.queue.shift();
+    const delay = Math.max(0, this.minRequestInterval - (Date.now() - this.lastRequestTime));
+    this.processorTimer = setTimeout(() => {
+      this.processorTimer = null;
+      this.processNext();
+    }, delay);
+  }
 
-      if (item) {
-        try {
-          // Respect rate limit
-          const now = Date.now();
-          const timeSinceLastRequest = now - this.lastRequestTime;
-          if (timeSinceLastRequest < this.minRequestInterval) {
-            await this.sleep(this.minRequestInterval - timeSinceLastRequest);
-          }
+  // Process the next item in the queue
+  private async processNext() {
+    if (this.isProcessing || this.queue.length === 0) return;
 
-          const result = await this.queryAPI(item.ip);
-          this.lastRequestTime = Date.now();
-          item.resolve(result);
-        } catch (err) {
-          console.error(`[GeoIP] Error querying ${item.ip}:`, err);
-          item.resolve(null);
-        }
-      }
+    this.isProcessing = true;
+    const item = this.queue.shift()!;
 
+    try {
+      const result = await this.queryAPI(item.ip);
+      this.lastRequestTime = Date.now();
+      item.resolve(result);
+    } catch (err) {
+      console.error(`[GeoIP] Error querying ${item.ip}:`, err);
+      item.resolve(null);
+    } finally {
       this.isProcessing = false;
-      setTimeout(processQueue, 100);
-    };
-
-    processQueue();
+      // Continue processing if more items in queue
+      if (this.queue.length > 0) {
+        this.scheduleProcessing();
+      }
+    }
   }
 
   // Query the API

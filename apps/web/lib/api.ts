@@ -87,21 +87,21 @@ export const api = {
       backendCount: number;
     }>(`${API_BASE}/stats/global`),
     
-  getDomains: (backendId?: number, limit = 50, range?: TimeRange) =>
-    fetchJson<DomainStats[]>(buildUrl(`${API_BASE}/stats/domains`, {
-      backendId,
-      limit,
-      start: range?.start,
-      end: range?.end,
-    })),
-    
-  getIPs: (backendId?: number, limit = 50, range?: TimeRange) =>
-    fetchJson<IPStats[]>(buildUrl(`${API_BASE}/stats/ips`, {
-      backendId,
-      limit,
-      start: range?.start,
-      end: range?.end,
-    })),
+  getDomains: (backendId?: number, opts?: {
+    offset?: number; limit?: number;
+    sortBy?: string; sortOrder?: string; search?: string;
+  }) =>
+    fetchJson<{ data: DomainStats[]; total: number }>(
+      buildUrl(`${API_BASE}/stats/domains`, { backendId, ...opts })
+    ),
+
+  getIPs: (backendId?: number, opts?: {
+    offset?: number; limit?: number;
+    sortBy?: string; sortOrder?: string; search?: string;
+  }) =>
+    fetchJson<{ data: IPStats[]; total: number }>(
+      buildUrl(`${API_BASE}/stats/ips`, { backendId, ...opts })
+    ),
     
   getProxies: (backendId?: number, limit = 50, range?: TimeRange) =>
     fetchJson<ProxyStats[]>(buildUrl(`${API_BASE}/stats/proxies`, {
@@ -186,6 +186,31 @@ export const api = {
   getProxyIPs: (chain: string, backendId?: number) =>
     fetchJson<IPStats[]>(
       buildUrl(`${API_BASE}/stats/proxies/ips`, { chain, backendId })
+    ),
+
+  getRuleDomains: (rule: string, backendId?: number) =>
+    fetchJson<DomainStats[]>(
+      buildUrl(`${API_BASE}/stats/rules/domains`, { rule, backendId })
+    ),
+
+  getRuleIPs: (rule: string, backendId?: number) =>
+    fetchJson<IPStats[]>(
+      buildUrl(`${API_BASE}/stats/rules/ips`, { rule, backendId })
+    ),
+
+  getRuleChainFlow: (rule: string, backendId?: number) =>
+    fetchJson<{ nodes: Array<{ name: string; totalUpload: number; totalDownload: number; totalConnections: number }>; links: Array<{ source: number; target: number }> }>(
+      buildUrl(`${API_BASE}/stats/rules/chain-flow`, { rule, backendId })
+    ),
+
+  getAllRuleChainFlows: (backendId?: number) =>
+    fetchJson<{
+      nodes: Array<{ name: string; layer: number; nodeType: 'rule' | 'group' | 'proxy'; totalUpload: number; totalDownload: number; totalConnections: number; rules: string[] }>;
+      links: Array<{ source: number; target: number; rules: string[] }>;
+      rulePaths: Record<string, { nodeIndices: number[]; linkIndices: number[] }>;
+      maxLayer: number;
+    }>(
+      buildUrl(`${API_BASE}/stats/rules/chain-flow-all`, { backendId })
     ),
 
   search: (q: string) =>

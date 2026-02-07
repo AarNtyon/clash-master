@@ -19,6 +19,8 @@ out/
 # Database
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 
@@ -58,3 +60,4 @@ next-env.d.ts
 
 # AI dev logs
 .specstory/
+.claude/

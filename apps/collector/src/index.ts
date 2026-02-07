@@ -52,6 +52,30 @@ async function main() {
   // Check for backend config changes every 5 seconds
   setInterval(manageBackends, 5000);
 
+  // Auto-cleanup: enforce data retention policy
+  function runAutoCleanup() {
+    try {
+      const config = db.getRetentionConfig();
+      if (!config.autoCleanup) return;
+
+      const connCutoff = new Date(Date.now() - config.connectionLogsDays * 86400000).toISOString();
+      const hourlyCutoff = new Date(Date.now() - config.hourlyStatsDays * 86400000).toISOString();
+
+      const deletedLogs = db.deleteOldConnectionLogs(connCutoff);
+      const deletedHourly = db.deleteOldHourlyStats(hourlyCutoff);
+
+      if (deletedLogs > 0 || deletedHourly > 0) {
+        console.log(`[Cleanup] Deleted ${deletedLogs} connection logs, ${deletedHourly} hourly stats`);
+      }
+    } catch (err) {
+      console.error('[Cleanup] Auto-cleanup failed:', err);
+    }
+  }
+
+  // First cleanup 30 seconds after startup, then every 6 hours
+  setTimeout(runAutoCleanup, 30000);
+  setInterval(runAutoCleanup, 6 * 60 * 60 * 1000);
+
   // Handle graceful shutdown
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

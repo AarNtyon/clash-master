@@ -50,8 +50,8 @@ export class APIServer {
       }
 
       const summary = this.db.getSummary(backendId);
-      const topDomains = this.db.getTopDomains(backendId, 1000);
-      const topIPs = this.db.getTopIPs(backendId, 1000);
+      const topDomains = this.db.getTopDomains(backendId, 10);
+      const topIPs = this.db.getTopIPs(backendId, 10);
       const proxyStats = this.db.getProxyStats(backendId);
       const ruleStats = this.db.getRuleStats(backendId);
       const hourlyStats = this.db.getHourlyStats(backendId, 24);
@@ -86,28 +86,52 @@ export class APIServer {
       return this.db.getGlobalSummary();
     });
 
-    // Get domain statistics for a specific backend
+    // Get domain statistics for a specific backend (paginated)
     app.get('/api/stats/domains', async (request, reply) => {
       const backendId = getBackendId(request);
-      
+
       if (backendId === null) {
         return reply.status(404).send({ error: 'No backend specified or active' });
       }
 
-      const { limit = 50 } = request.query as { limit?: string };
-      return this.db.getDomainStats(backendId, parseInt(limit as string) || 50);
+      const { offset, limit, sortBy, sortOrder, search } = request.query as {
+        offset?: string;
+        limit?: string;
+        sortBy?: string;
+        sortOrder?: string;
+        search?: string;
+      };
+      return this.db.getDomainStatsPaginated(backendId, {
+        offset: offset ? parseInt(offset) || 0 : 0,
+        limit: limit ? parseInt(limit) || 50 : 50,
+        sortBy,
+        sortOrder,
+        search,
+      });
     });
 
-    // Get IP statistics for a specific backend
+    // Get IP statistics for a specific backend (paginated)
     app.get('/api/stats/ips', async (request, reply) => {
       const backendId = getBackendId(request);
-      
+
       if (backendId === null) {
         return reply.status(404).send({ error: 'No backend specified or active' });
       }
 
-      const { limit = 50 } = request.query as { limit?: string };
-      return this.db.getIPStats(backendId, parseInt(limit as string) || 50);
+      const { offset, limit, sortBy, sortOrder, search } = request.query as {
+        offset?: string;
+        limit?: string;
+        sortBy?: string;
+        sortOrder?: string;
+        search?: string;
+      };
+      return this.db.getIPStatsPaginated(backendId, {
+        offset: offset ? parseInt(offset) || 0 : 0,
+        limit: limit ? parseInt(limit) || 50 : 50,
+        sortBy,
+        sortOrder,
+        search,
+      });
     });
 
     // Get per-proxy traffic breakdown for a specific domain
@@ -217,6 +241,65 @@ export class APIServer {
       }
 
       return this.db.getRuleStats(backendId);
+    });
+
+    // Get domains for a specific rule
+    app.get('/api/stats/rules/domains', async (request, reply) => {
+      const backendId = getBackendId(request);
+      
+      if (backendId === null) {
+        return reply.status(404).send({ error: 'No backend specified or active' });
+      }
+
+      const { rule } = request.query as { rule?: string };
+      if (!rule) {
+        return reply.status(400).send({ error: 'Rule parameter is required' });
+      }
+
+      return this.db.getRuleDomains(backendId, rule);
+    });
+
+    // Get IPs for a specific rule
+    app.get('/api/stats/rules/ips', async (request, reply) => {
+      const backendId = getBackendId(request);
+      
+      if (backendId === null) {
+        return reply.status(404).send({ error: 'No backend specified or active' });
+      }
+
+      const { rule } = request.query as { rule?: string };
+      if (!rule) {
+        return reply.status(400).send({ error: 'Rule parameter is required' });
+      }
+
+      return this.db.getRuleIPs(backendId, rule);
+    });
+
+    // Get rule chain flow for a specific rule
+    app.get('/api/stats/rules/chain-flow', async (request, reply) => {
+      const backendId = getBackendId(request);
+      
+      if (backendId === null) {
+        return reply.status(404).send({ error: 'No backend specified or active' });
+      }
+
+      const { rule } = request.query as { rule?: string };
+      if (!rule) {
+        return reply.status(400).send({ error: 'Rule parameter is required' });
+      }
+
+      return this.db.getRuleChainFlow(backendId, rule);
+    });
+
+    // Get all rule chain flows merged into unified DAG
+    app.get('/api/stats/rules/chain-flow-all', async (request, reply) => {
+      const backendId = getBackendId(request);
+
+      if (backendId === null) {
+        return reply.status(404).send({ error: 'No backend specified or active' });
+      }
+
+      return this.db.getAllRuleChainFlows(backendId);
     });
 
     // Get rule to proxy mapping for a specific backend

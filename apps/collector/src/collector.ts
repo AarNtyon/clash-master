@@ -1,5 +1,3 @@
-"use client";
-
 import WebSocket from 'ws';
 import type { ConnectionsData } from '@clashmaster/shared';
 import { StatsDatabase } from './db.js';
@@ -18,6 +16,8 @@ interface TrafficUpdate {
   ip: string;
   chain: string;
   chains: string[];
+  rule: string;
+  rulePayload: string;
   upload: number;
   download: number;
 }
@@ -169,19 +169,17 @@ class BatchBuffer {
     try {
       db.batchUpdateTrafficStats(backendId, updates);
       
-      // Process geo results
-      for (const result of geoResults) {
-        if (result.geo) {
-          db.updateCountryStats(
-            backendId,
-            result.geo.country,
-            result.geo.country_name,
-            result.geo.continent,
-            result.upload,
-            result.download
-          );
-        }
-      }
+      // Process geo results in batch
+      const countryUpdates = geoResults
+        .filter((r): r is GeoIPResult & { geo: NonNullable<GeoIPResult['geo']> } => r.geo !== null)
+        .map(r => ({
+          country: r.geo.country,
+          countryName: r.geo.country_name,
+          continent: r.geo.continent,
+          upload: r.upload,
+          download: r.download,
+        }));
+      db.batchUpdateCountryStats(backendId, countryUpdates);
     } catch (err) {
       console.error(`[Collector:${backendId}] Batch write failed:`, err);
     }
@@ -209,6 +207,8 @@ interface TrackedConnection {
   domain: string;
   ip: string;
   chains: string[];
+  rule: string;
+  rulePayload: string;
   lastUpload: number;
   lastDownload: number;
   totalUpload: number;
@@ -229,15 +229,16 @@ export function createCollector(
   let lastBroadcastTime = 0;
   const broadcastThrottleMs = 500;
   let flushInterval: NodeJS.Timeout | null = null;
-  
-  // Start batch flush interval (every 1000ms)
+  const FLUSH_INTERVAL_MS = parseInt(process.env.FLUSH_INTERVAL_MS || '2000');
+
+  // Start batch flush interval
   flushInterval = setInterval(() => {
     const stats = batchBuffer.flush(db, geoService, id);
-    
+
     if (batchBuffer.shouldLog() && (stats.domains > 0 || stats.rules > 0)) {
       console.log(`[Collector:${id}] Active: ${activeConnections.size}, Domains: ${stats.domains}, Rules: ${stats.rules}`);
     }
-  }, 1000);
+  }, FLUSH_INTERVAL_MS);
   
   const collector = new OpenClashCollector(id, {
     url,
@@ -281,6 +282,8 @@ export function createCollector(
         const domain = metadata.host || metadata.sniffHost || '';
         const ip = metadata.destinationIP || '';
         const chains = Array.isArray(conn.chains) ? conn.chains : ['DIRECT'];
+        const rule = conn.rule || 'Match';
+        const rulePayload = conn.rulePayload || '';
         
         const existing = activeConnections.get(conn.id);
         
@@ -291,6 +294,8 @@ export function createCollector(
             domain,
             ip,
             chains,
+            rule,
+            rulePayload,
             lastUpload: conn.upload,
             lastDownload: conn.download,
             totalUpload: conn.upload,
@@ -304,6 +309,8 @@ export function createCollector(
               ip,
               chain: chains[0] || 'DIRECT',
               chains,
+              rule,
+              rulePayload,
               upload: conn.upload,
               download: conn.download,
             });
@@ -342,6 +349,8 @@ export function createCollector(
               ip: existing.ip,
               chain: existing.chains[0] || 'DIRECT',
               chains: existing.chains,
+              rule: existing.rule || 'Match',
+              rulePayload: existing.rulePayload || '',
               upload: uploadDelta,
               download: downloadDelta,
             });

@@ -168,9 +168,18 @@
   },
   "rules": {
     "title": "Rules",
-    "distribution": "Rule Chain Distribution",
+    "distribution": "Rule Traffic Distribution",
+    "ruleList": "Rule List",
+    "topDomains": "Top Domains",
     "description": "Traffic distribution by matching rules and their final proxy nodes",
-    "connections": "conn"
+    "connections": "conn",
+    "noData": "No data",
+    "total": "Total",
+    "download": "Download",
+    "upload": "Upload",
+    "chainFlow": "Rule Chain Flow",
+    "loadingChainFlow": "Loading chain flow...",
+    "showAll": "Show All"
   },
   "network": {
     "title": "Network",
@@ -186,6 +195,10 @@
     "traffic": "Traffic:",
     "low": "Low",
     "high": "High"
+  },
+  "pwa": {
+    "installApp": "INSTALL",
+    "tooltip": "Install as a desktop app for faster access and a native experience"
   },
   "about": {
     "title": "About",

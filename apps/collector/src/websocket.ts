@@ -151,32 +151,39 @@ export class StatsWebSocketServer {
   // Broadcast stats to all connected clients
   async broadcastStats(force = false) {
     const now = Date.now();
-    
+
     // Throttle broadcasts to prevent overwhelming clients
     if (!force && now - this.lastBroadcastTime < this.broadcastThrottleMs) {
       return;
     }
-    
+
     this.lastBroadcastTime = now;
 
     if (this.clients.size === 0) return;
 
     try {
       let sentCount = 0;
-      
+      // Cache stats per backendId to avoid redundant DB queries
+      const statsCache = new Map<number | null, StatsSummary | null>();
+
       // Send stats to each client based on their subscribed backend
       for (const [ws, clientInfo] of this.clients) {
-        if (ws.readyState === WebSocket.OPEN) {
-          const stats = this.getStatsForBackend(clientInfo.backendId);
-          if (stats) {
-            const message: WebSocketMessage = {
-              type: 'stats',
-              data: stats,
-              timestamp: new Date().toISOString()
-            };
-            ws.send(JSON.stringify(message));
-            sentCount++;
-          }
+        if (ws.readyState !== WebSocket.OPEN) continue;
+
+        const cacheKey = clientInfo.backendId;
+        if (!statsCache.has(cacheKey)) {
+          statsCache.set(cacheKey, this.getStatsForBackend(cacheKey));
+        }
+        const stats = statsCache.get(cacheKey)!;
+
+        if (stats) {
+          const message: WebSocketMessage = {
+            type: 'stats',
+            data: stats,
+            timestamp: new Date().toISOString()
+          };
+          ws.send(JSON.stringify(message));
+          sentCount++;
         }
       }
 

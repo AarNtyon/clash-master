@@ -14,6 +14,8 @@ export interface TrafficUpdate {
   ip: string;
   chain: string;
   chains: string[];
+  rule: string;
+  rulePayload: string;
   upload: number;
   download: number;
 }
@@ -41,6 +43,14 @@ export class StatsDatabase {
   }
 
   private init() {
+    // Enable WAL mode and performance PRAGMAs for reduced disk IO
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('synchronous = NORMAL');
+    this.db.pragma('wal_autocheckpoint = 1000');
+    this.db.pragma('temp_store = MEMORY');
+    this.db.pragma('cache_size = -16000');     // 16MB page cache
+    this.db.pragma('busy_timeout = 5000');
+
     // Domain statistics - aggregated by domain per backend
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS domain_stats (
@@ -71,6 +81,7 @@ export class StatsDatabase {
         asn TEXT,
         geoip TEXT,
         chains TEXT,
+        rules TEXT,
         PRIMARY KEY (backend_id, ip),
         FOREIGN KEY (backend_id) REFERENCES backend_configs(id) ON DELETE CASCADE
       );
@@ -185,6 +196,52 @@ export class StatsDatabase {
         FOREIGN KEY (backend_id) REFERENCES backend_configs(id) ON DELETE CASCADE
       );
     `);
+
+    // Rule-specific cross-reference tables for accurate per-rule traffic
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS rule_chain_traffic (
+        backend_id INTEGER NOT NULL,
+        rule TEXT NOT NULL,
+        chain TEXT NOT NULL,
+        total_upload INTEGER DEFAULT 0,
+        total_download INTEGER DEFAULT 0,
+        total_connections INTEGER DEFAULT 0,
+        last_seen DATETIME,
+        PRIMARY KEY (backend_id, rule, chain),
+        FOREIGN KEY (backend_id) REFERENCES backend_configs(id) ON DELETE CASCADE
+      );
+    `);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_rule_chain_traffic ON rule_chain_traffic(backend_id, rule);`);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS rule_domain_traffic (
+        backend_id INTEGER NOT NULL,
+        rule TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        total_upload INTEGER DEFAULT 0,
+        total_download INTEGER DEFAULT 0,
+        total_connections INTEGER DEFAULT 0,
+        last_seen DATETIME,
+        PRIMARY KEY (backend_id, rule, domain),
+        FOREIGN KEY (backend_id) REFERENCES backend_configs(id) ON DELETE CASCADE
+      );
+    `);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_rule_domain_traffic ON rule_domain_traffic(backend_id, rule);`);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS rule_ip_traffic (
+        backend_id INTEGER NOT NULL,
+        rule TEXT NOT NULL,
+        ip TEXT NOT NULL,
+        total_upload INTEGER DEFAULT 0,
+        total_download INTEGER DEFAULT 0,
+        total_connections INTEGER DEFAULT 0,
+        last_seen DATETIME,
+        PRIMARY KEY (backend_id, rule, ip),
+        FOREIGN KEY (backend_id) REFERENCES backend_configs(id) ON DELETE CASCADE
+      );
+    `);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_rule_ip_traffic ON rule_ip_traffic(backend_id, rule);`);
 
     // Create indexes
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_domain_stats_backend ON domain_stats(backend_id);`);
@@ -339,6 +396,7 @@ export class StatsDatabase {
           asn TEXT,
           geoip TEXT,
           chains TEXT,
+          rules TEXT,
           PRIMARY KEY (backend_id, ip),
           FOREIGN KEY (backend_id) REFERENCES backend_configs(id) ON DELETE CASCADE
         );
@@ -499,8 +557,9 @@ export class StatsDatabase {
     // Only process if there's actual traffic
     if (update.upload === 0 && update.download === 0) return;
 
-    // Get the initial rule (last element in chains array) and final proxy (first element)
-    const initialRule = update.chains.length > 0 ? update.chains[update.chains.length - 1] : 'DIRECT';
+    // Get rule name from chains (friendly name) or fallback to rule + rulePayload
+    const ruleName = update.chains.length > 1 ? update.chains[update.chains.length - 1] : 
+                     update.rulePayload ? `${update.rule}(${update.rulePayload})` : update.rule;
     const finalProxy = update.chains.length > 0 ? update.chains[0] : 'DIRECT';
 
     const transaction = this.db.transaction(() => {
@@ -538,15 +597,15 @@ export class StatsDatabase {
           upload: update.upload,
           download: update.download,
           timestamp,
-          rule: initialRule,
+          rule: ruleName,
           chain: update.chain
         });
       }
 
       // Update IP stats with backend_id
       const ipStmt = this.db.prepare(`
-        INSERT INTO ip_stats (backend_id, ip, domains, total_upload, total_download, total_connections, last_seen, chains)
-        VALUES (@backendId, @ip, @domain, @upload, @download, 1, @timestamp, @chain)
+        INSERT INTO ip_stats (backend_id, ip, domains, total_upload, total_download, total_connections, last_seen, chains, rules)
+        VALUES (@backendId, @ip, @domain, @upload, @download, 1, @timestamp, @chain, @rule)
         ON CONFLICT(backend_id, ip) DO UPDATE SET
           domains = CASE 
             WHEN ip_stats.domains IS NULL THEN @domain
@@ -561,8 +620,15 @@ export class StatsDatabase {
             WHEN ip_stats.chains IS NULL THEN @chain
             WHEN INSTR(ip_stats.chains, @chain) > 0 THEN ip_stats.chains
             ELSE ip_stats.chains || ',' || @chain
+          END,
+          rules = CASE 
+            WHEN ip_stats.rules IS NULL THEN @rule
+            WHEN INSTR(ip_stats.rules, @rule) > 0 THEN ip_stats.rules
+            ELSE ip_stats.rules || ',' || @rule
           END
       `);
+      // Store full chain path (joined with > for clarity)
+      const fullChain = update.chains.join(' > ');
       ipStmt.run({
         backendId,
         ip: update.ip,
@@ -570,7 +636,8 @@ export class StatsDatabase {
         upload: update.upload,
         download: update.download,
         timestamp,
-        chain: update.chain
+        chain: fullChain,
+        rule: ruleName
       });
 
       // Update proxy stats with backend_id
@@ -604,8 +671,67 @@ export class StatsDatabase {
       `);
       ruleStmt.run({
         backendId,
-        rule: initialRule,
+        rule: ruleName,
         finalProxy,
+        upload: update.upload,
+        download: update.download,
+        timestamp
+      });
+
+      // Update rule_chain_traffic (all connections have a chain)
+      const ruleChainStmt = this.db.prepare(`
+        INSERT INTO rule_chain_traffic (backend_id, rule, chain, total_upload, total_download, total_connections, last_seen)
+        VALUES (@backendId, @rule, @chain, @upload, @download, 1, @timestamp)
+        ON CONFLICT(backend_id, rule, chain) DO UPDATE SET
+          total_upload = total_upload + @upload,
+          total_download = total_download + @download,
+          total_connections = total_connections + 1,
+          last_seen = @timestamp
+      `);
+      ruleChainStmt.run({
+        backendId,
+        rule: ruleName,
+        chain: fullChain,
+        upload: update.upload,
+        download: update.download,
+        timestamp
+      });
+
+      // Update rule_domain_traffic (only when domain is known)
+      if (domainName !== 'unknown') {
+        const ruleDomainStmt = this.db.prepare(`
+          INSERT INTO rule_domain_traffic (backend_id, rule, domain, total_upload, total_download, total_connections, last_seen)
+          VALUES (@backendId, @rule, @domain, @upload, @download, 1, @timestamp)
+          ON CONFLICT(backend_id, rule, domain) DO UPDATE SET
+            total_upload = total_upload + @upload,
+            total_download = total_download + @download,
+            total_connections = total_connections + 1,
+            last_seen = @timestamp
+        `);
+        ruleDomainStmt.run({
+          backendId,
+          rule: ruleName,
+          domain: domainName,
+          upload: update.upload,
+          download: update.download,
+          timestamp
+        });
+      }
+
+      // Update rule_ip_traffic (all connections have an IP)
+      const ruleIPStmt = this.db.prepare(`
+        INSERT INTO rule_ip_traffic (backend_id, rule, ip, total_upload, total_download, total_connections, last_seen)
+        VALUES (@backendId, @rule, @ip, @upload, @download, 1, @timestamp)
+        ON CONFLICT(backend_id, rule, ip) DO UPDATE SET
+          total_upload = total_upload + @upload,
+          total_download = total_download + @download,
+          total_connections = total_connections + 1,
+          last_seen = @timestamp
+      `);
+      ruleIPStmt.run({
+        backendId,
+        rule: ruleName,
+        ip: update.ip,
         upload: update.upload,
         download: update.download,
         timestamp
@@ -663,13 +789,19 @@ export class StatsDatabase {
     const domainMap = new Map<string, TrafficUpdate & { count: number }>();
     const ipMap = new Map<string, TrafficUpdate & { count: number }>();
     const chainMap = new Map<string, { chains: string[]; upload: number; download: number; count: number }>();
-    const ruleProxyMap = new Map<string, { rule: string; proxy: string; count: number }>();
+    const ruleProxyMap = new Map<string, { rule: string; proxy: string; upload: number; download: number; count: number }>();
     const hourlyMap = new Map<string, { upload: number; download: number; connections: number }>();
+    const ruleChainMap = new Map<string, { rule: string; chain: string; upload: number; download: number; count: number }>();
+    const ruleDomainMap = new Map<string, { rule: string; domain: string; upload: number; download: number; count: number }>();
+    const ruleIPMap = new Map<string, { rule: string; ip: string; upload: number; download: number; count: number }>();
 
     for (const update of updates) {
       if (update.upload === 0 && update.download === 0) continue;
 
-      const initialRule = update.chains.length > 0 ? update.chains[update.chains.length - 1] : 'DIRECT';
+      // Use the last element of chains as the rule name (friendly name from Clash config)
+      // e.g., "漏网之鱼", "微软服务", "TikTok"
+      const ruleName = update.chains.length > 1 ? update.chains[update.chains.length - 1] : 
+                       update.rulePayload ? `${update.rule}(${update.rulePayload})` : update.rule;
       const finalProxy = update.chains.length > 0 ? update.chains[0] : 'DIRECT';
 
       // Aggregate domain stats
@@ -693,7 +825,7 @@ export class StatsDatabase {
         existingIp.download += update.download;
         existingIp.count++;
       } else {
-        ipMap.set(ipKey, { ...update, count: 1 });
+        ipMap.set(ipKey, { ...update, rule: ruleName, count: 1 });
       }
 
       // Aggregate chain stats
@@ -713,12 +845,14 @@ export class StatsDatabase {
       }
 
       // Aggregate rule stats
-      const ruleKey = `${initialRule}:${finalProxy}`;
+      const ruleKey = `${ruleName}:${finalProxy}`;
       const existingRule = ruleProxyMap.get(ruleKey);
       if (existingRule) {
+        existingRule.upload += update.upload;
+        existingRule.download += update.download;
         existingRule.count++;
       } else {
-        ruleProxyMap.set(ruleKey, { rule: initialRule, proxy: finalProxy, count: 1 });
+        ruleProxyMap.set(ruleKey, { rule: ruleName, proxy: finalProxy, upload: update.upload, download: update.download, count: 1 });
       }
 
       // Aggregate hourly stats
@@ -729,11 +863,47 @@ export class StatsDatabase {
         existingHour.download += update.download;
         existingHour.connections++;
       } else {
-        hourlyMap.set(hourKey, { 
-          upload: update.upload, 
-          download: update.download, 
-          connections: 1 
+        hourlyMap.set(hourKey, {
+          upload: update.upload,
+          download: update.download,
+          connections: 1
         });
+      }
+
+      // Aggregate rule_chain_traffic
+      const fullChainForRule = update.chains.join(' > ');
+      const ruleChainKey = `${ruleName}:${fullChainForRule}`;
+      const existingRuleChain = ruleChainMap.get(ruleChainKey);
+      if (existingRuleChain) {
+        existingRuleChain.upload += update.upload;
+        existingRuleChain.download += update.download;
+        existingRuleChain.count++;
+      } else {
+        ruleChainMap.set(ruleChainKey, { rule: ruleName, chain: fullChainForRule, upload: update.upload, download: update.download, count: 1 });
+      }
+
+      // Aggregate rule_domain_traffic (only when domain exists)
+      if (update.domain) {
+        const ruleDomainKey = `${ruleName}:${update.domain}`;
+        const existingRuleDomain = ruleDomainMap.get(ruleDomainKey);
+        if (existingRuleDomain) {
+          existingRuleDomain.upload += update.upload;
+          existingRuleDomain.download += update.download;
+          existingRuleDomain.count++;
+        } else {
+          ruleDomainMap.set(ruleDomainKey, { rule: ruleName, domain: update.domain, upload: update.upload, download: update.download, count: 1 });
+        }
+      }
+
+      // Aggregate rule_ip_traffic
+      const ruleIPKey = `${ruleName}:${update.ip}`;
+      const existingRuleIP = ruleIPMap.get(ruleIPKey);
+      if (existingRuleIP) {
+        existingRuleIP.upload += update.upload;
+        existingRuleIP.download += update.download;
+        existingRuleIP.count++;
+      } else {
+        ruleIPMap.set(ruleIPKey, { rule: ruleName, ip: update.ip, upload: update.upload, download: update.download, count: 1 });
       }
     }
 
@@ -766,7 +936,10 @@ export class StatsDatabase {
       `);
 
       for (const [key, data] of domainMap) {
-        const initialRule = data.chains.length > 0 ? data.chains[data.chains.length - 1] : 'DIRECT';
+        const ruleName = data.chains.length > 1 ? data.chains[data.chains.length - 1] : 
+                         data.rulePayload ? `${data.rule}(${data.rulePayload})` : data.rule;
+        // Store full chain path (joined with > for clarity)
+        const fullChain = data.chains.join(' > ');
         domainStmt.run({
           backendId,
           domain: data.domain,
@@ -775,15 +948,15 @@ export class StatsDatabase {
           download: data.download,
           count: data.count,
           timestamp,
-          rule: initialRule,
-          chain: data.chain
+          rule: ruleName,
+          chain: fullChain
         });
       }
 
       // IP stats
       const ipStmt = this.db.prepare(`
-        INSERT INTO ip_stats (backend_id, ip, domains, total_upload, total_download, total_connections, last_seen, chains)
-        VALUES (@backendId, @ip, @domain, @upload, @download, @count, @timestamp, @chain)
+        INSERT INTO ip_stats (backend_id, ip, domains, total_upload, total_download, total_connections, last_seen, chains, rules)
+        VALUES (@backendId, @ip, @domain, @upload, @download, @count, @timestamp, @chain, @rule)
         ON CONFLICT(backend_id, ip) DO UPDATE SET
           domains = CASE 
             WHEN ip_stats.domains IS NULL THEN @domain
@@ -798,10 +971,17 @@ export class StatsDatabase {
             WHEN ip_stats.chains IS NULL THEN @chain
             WHEN INSTR(ip_stats.chains, @chain) > 0 THEN ip_stats.chains
             ELSE ip_stats.chains || ',' || @chain
+          END,
+          rules = CASE 
+            WHEN ip_stats.rules IS NULL THEN @rule
+            WHEN INSTR(ip_stats.rules, @rule) > 0 THEN ip_stats.rules
+            ELSE ip_stats.rules || ',' || @rule
           END
       `);
 
       for (const [key, data] of ipMap) {
+        // Store full chain path (joined with > for clarity)
+        const fullChain = data.chains.join(' > ');
         ipStmt.run({
           backendId,
           ip: data.ip,
@@ -810,7 +990,8 @@ export class StatsDatabase {
           download: data.download,
           count: data.count,
           timestamp,
-          chain: data.chain
+          chain: fullChain,
+          rule: data.rule
         });
       }
 
@@ -839,9 +1020,11 @@ export class StatsDatabase {
       // Rule stats
       const ruleStmt = this.db.prepare(`
         INSERT INTO rule_stats (backend_id, rule, final_proxy, total_upload, total_download, total_connections, last_seen)
-        VALUES (@backendId, @rule, @proxy, 0, 0, @count, @timestamp)
+        VALUES (@backendId, @rule, @proxy, @upload, @download, @count, @timestamp)
         ON CONFLICT(backend_id, rule) DO UPDATE SET
           final_proxy = @proxy,
+          total_upload = total_upload + @upload,
+          total_download = total_download + @download,
           total_connections = total_connections + @count,
           last_seen = @timestamp
       `);
@@ -851,6 +1034,8 @@ export class StatsDatabase {
           backendId,
           rule: data.rule,
           proxy: data.proxy,
+          upload: data.upload,
+          download: data.download,
           count: data.count,
           timestamp
         });
@@ -887,6 +1072,75 @@ export class StatsDatabase {
           upload: data.upload,
           download: data.download,
           connections: data.connections
+        });
+      }
+
+      // Rule chain traffic
+      const ruleChainStmt = this.db.prepare(`
+        INSERT INTO rule_chain_traffic (backend_id, rule, chain, total_upload, total_download, total_connections, last_seen)
+        VALUES (@backendId, @rule, @chain, @upload, @download, @count, @timestamp)
+        ON CONFLICT(backend_id, rule, chain) DO UPDATE SET
+          total_upload = total_upload + @upload,
+          total_download = total_download + @download,
+          total_connections = total_connections + @count,
+          last_seen = @timestamp
+      `);
+
+      for (const [key, data] of ruleChainMap) {
+        ruleChainStmt.run({
+          backendId,
+          rule: data.rule,
+          chain: data.chain,
+          upload: data.upload,
+          download: data.download,
+          count: data.count,
+          timestamp
+        });
+      }
+
+      // Rule domain traffic
+      const ruleDomainStmt = this.db.prepare(`
+        INSERT INTO rule_domain_traffic (backend_id, rule, domain, total_upload, total_download, total_connections, last_seen)
+        VALUES (@backendId, @rule, @domain, @upload, @download, @count, @timestamp)
+        ON CONFLICT(backend_id, rule, domain) DO UPDATE SET
+          total_upload = total_upload + @upload,
+          total_download = total_download + @download,
+          total_connections = total_connections + @count,
+          last_seen = @timestamp
+      `);
+
+      for (const [key, data] of ruleDomainMap) {
+        ruleDomainStmt.run({
+          backendId,
+          rule: data.rule,
+          domain: data.domain,
+          upload: data.upload,
+          download: data.download,
+          count: data.count,
+          timestamp
+        });
+      }
+
+      // Rule IP traffic
+      const ruleIPStmt = this.db.prepare(`
+        INSERT INTO rule_ip_traffic (backend_id, rule, ip, total_upload, total_download, total_connections, last_seen)
+        VALUES (@backendId, @rule, @ip, @upload, @download, @count, @timestamp)
+        ON CONFLICT(backend_id, rule, ip) DO UPDATE SET
+          total_upload = total_upload + @upload,
+          total_download = total_download + @download,
+          total_connections = total_connections + @count,
+          last_seen = @timestamp
+      `);
+
+      for (const [key, data] of ruleIPMap) {
+        ruleIPStmt.run({
+          backendId,
+          rule: data.rule,
+          ip: data.ip,
+          upload: data.upload,
+          download: data.download,
+          count: data.count,
+          timestamp
         });
       }
 
@@ -1192,6 +1446,31 @@ export class StatsDatabase {
     stmt.run(backendId, country, countryName, continent, upload, download, upload, download);
   }
 
+  // Batch update country stats - wraps all upserts in a single transaction
+  batchUpdateCountryStats(backendId: number, results: Array<{
+    country: string; countryName: string; continent: string;
+    upload: number; download: number;
+  }>): void {
+    if (results.length === 0) return;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO country_stats (backend_id, country, country_name, continent, total_upload, total_download, total_connections, last_seen)
+      VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+      ON CONFLICT(backend_id, country) DO UPDATE SET
+        total_upload = total_upload + ?,
+        total_download = total_download + ?,
+        total_connections = total_connections + 1,
+        last_seen = CURRENT_TIMESTAMP
+    `);
+
+    const tx = this.db.transaction(() => {
+      for (const r of results) {
+        stmt.run(backendId, r.country, r.countryName, r.continent, r.upload, r.download, r.upload, r.download);
+      }
+    });
+    tx();
+  }
+
   // Get top domains for a specific backend
   getTopDomains(backendId: number, limit = 10): DomainStats[] {
     return this.getDomainStats(backendId, limit);
@@ -1200,6 +1479,155 @@ export class StatsDatabase {
   // Get top IPs for a specific backend
   getTopIPs(backendId: number, limit = 10): IPStats[] {
     return this.getIPStats(backendId, limit);
+  }
+
+  // Get domain stats with server-side pagination, sorting and search
+  getDomainStatsPaginated(backendId: number, opts: {
+    offset?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: string;
+    search?: string;
+  } = {}): { data: DomainStats[]; total: number } {
+    const offset = opts.offset ?? 0;
+    const limit = Math.min(opts.limit ?? 50, 200);
+    const sortOrder = opts.sortOrder === 'asc' ? 'ASC' : 'DESC';
+    const search = opts.search?.trim() || '';
+
+    const sortColumnMap: Record<string, string> = {
+      domain: 'domain',
+      totalDownload: 'total_download',
+      totalUpload: 'total_upload',
+      totalConnections: 'total_connections',
+      lastSeen: 'last_seen',
+    };
+    const sortColumn = sortColumnMap[opts.sortBy || 'totalDownload'] || 'total_download';
+
+    const whereClause = search
+      ? 'WHERE backend_id = ? AND domain LIKE ?'
+      : 'WHERE backend_id = ?';
+    const params: any[] = search
+      ? [backendId, `%${search}%`]
+      : [backendId];
+
+    const countStmt = this.db.prepare(
+      `SELECT COUNT(*) as total FROM domain_stats ${whereClause}`
+    );
+    const { total } = countStmt.get(...params) as { total: number };
+
+    const dataStmt = this.db.prepare(`
+      SELECT domain, total_upload as totalUpload, total_download as totalDownload,
+             total_connections as totalConnections, last_seen as lastSeen, ips, rules, chains
+      FROM domain_stats
+      ${whereClause}
+      ORDER BY ${sortColumn} ${sortOrder}
+      LIMIT ? OFFSET ?
+    `);
+    const rows = dataStmt.all(...params, limit, offset) as Array<{
+      domain: string;
+      totalUpload: number;
+      totalDownload: number;
+      totalConnections: number;
+      lastSeen: string;
+      ips: string | null;
+      rules: string | null;
+      chains: string | null;
+    }>;
+
+    const data = rows.map(row => ({
+      ...row,
+      ips: row.ips ? row.ips.split(',') : [],
+      rules: row.rules ? row.rules.split(',') : [],
+      chains: row.chains ? row.chains.split(',') : [],
+    })) as DomainStats[];
+
+    return { data, total };
+  }
+
+  // Get IP stats with server-side pagination, sorting and search
+  getIPStatsPaginated(backendId: number, opts: {
+    offset?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: string;
+    search?: string;
+  } = {}): { data: IPStats[]; total: number } {
+    const offset = opts.offset ?? 0;
+    const limit = Math.min(opts.limit ?? 50, 200);
+    const sortOrder = opts.sortOrder === 'asc' ? 'ASC' : 'DESC';
+    const search = opts.search?.trim() || '';
+
+    const sortColumnMap: Record<string, string> = {
+      ip: 'i.ip',
+      totalDownload: 'i.total_download',
+      totalUpload: 'i.total_upload',
+      totalConnections: 'i.total_connections',
+      lastSeen: 'i.last_seen',
+    };
+    const sortColumn = sortColumnMap[opts.sortBy || 'totalDownload'] || 'i.total_download';
+
+    const whereClause = search
+      ? 'WHERE i.backend_id = ? AND (i.ip LIKE ? OR i.domains LIKE ?)'
+      : 'WHERE i.backend_id = ?';
+    const params: any[] = search
+      ? [backendId, `%${search}%`, `%${search}%`]
+      : [backendId];
+
+    const countStmt = this.db.prepare(
+      `SELECT COUNT(*) as total FROM ip_stats i ${whereClause}`
+    );
+    const { total } = countStmt.get(...params) as { total: number };
+
+    const dataStmt = this.db.prepare(`
+      SELECT
+        i.ip,
+        i.domains,
+        i.total_upload as totalUpload,
+        i.total_download as totalDownload,
+        i.total_connections as totalConnections,
+        i.last_seen as lastSeen,
+        COALESCE(i.asn, g.asn) as asn,
+        CASE
+          WHEN g.country IS NOT NULL THEN
+            json_array(
+              g.country,
+              COALESCE(g.country_name, g.country),
+              COALESCE(g.city, ''),
+              COALESCE(g.as_name, '')
+            )
+          WHEN i.geoip IS NOT NULL THEN
+            json(i.geoip)
+          ELSE
+            NULL
+        END as geoIP,
+        i.chains
+      FROM ip_stats i
+      LEFT JOIN geoip_cache g ON i.ip = g.ip
+      ${whereClause}
+      ORDER BY ${sortColumn} ${sortOrder}
+      LIMIT ? OFFSET ?
+    `);
+    const rows = dataStmt.all(...params, limit, offset) as Array<{
+      ip: string;
+      domains: string;
+      totalUpload: number;
+      totalDownload: number;
+      totalConnections: number;
+      lastSeen: string;
+      asn: string | null;
+      geoIP: string | null;
+      chains: string | null;
+    }>;
+
+    const data = rows.map(row => ({
+      ...row,
+      domains: row.domains ? row.domains.split(',') : [],
+      geoIP: row.geoIP ? JSON.parse(row.geoIP).filter(Boolean) : undefined,
+      asn: row.asn || undefined,
+      chains: row.chains ? row.chains.split(',') : [],
+    })) as IPStats[];
+
+    return { data, total };
   }
 
   // Get proxy stats for a specific backend
@@ -1496,6 +1924,309 @@ export class StatsDatabase {
     })) as IPStats[];
   }
 
+  // Get domains for a specific rule (by matching rule name in domain_stats.rules)
+  getRuleDomains(backendId: number, rule: string, limit = 50): DomainStats[] {
+    // Query rule_domain_traffic for accurate per-rule domain traffic, join domain_stats for ips/chains
+    const stmt = this.db.prepare(`
+      SELECT
+        rdt.domain,
+        rdt.total_upload as totalUpload,
+        rdt.total_download as totalDownload,
+        rdt.total_connections as totalConnections,
+        rdt.last_seen as lastSeen,
+        ds.ips,
+        ds.chains
+      FROM rule_domain_traffic rdt
+      LEFT JOIN domain_stats ds ON rdt.backend_id = ds.backend_id AND rdt.domain = ds.domain
+      WHERE rdt.backend_id = ? AND rdt.rule = ?
+      ORDER BY (rdt.total_upload + rdt.total_download) DESC
+      LIMIT ?
+    `);
+
+    const rows = stmt.all(backendId, rule, limit) as Array<{
+      domain: string;
+      totalUpload: number;
+      totalDownload: number;
+      totalConnections: number;
+      lastSeen: string;
+      ips: string | null;
+      chains: string | null;
+    }>;
+
+    return rows.map(row => ({
+      domain: row.domain,
+      totalUpload: row.totalUpload,
+      totalDownload: row.totalDownload,
+      totalConnections: row.totalConnections,
+      lastSeen: row.lastSeen,
+      ips: row.ips ? row.ips.split(',').filter(Boolean) : [],
+      chains: row.chains ? row.chains.split(',').filter(Boolean) : [],
+      rules: [rule],
+    })) as DomainStats[];
+  }
+
+  // Get IPs for a specific rule (by matching rule name in ip_stats.rules)
+  getRuleIPs(backendId: number, rule: string, limit = 50): IPStats[] {
+    // Query rule_ip_traffic for accurate per-rule IP traffic, join ip_stats and geoip_cache for metadata
+    const stmt = this.db.prepare(`
+      SELECT
+        rit.ip,
+        rit.total_upload as totalUpload,
+        rit.total_download as totalDownload,
+        rit.total_connections as totalConnections,
+        rit.last_seen as lastSeen,
+        i.domains,
+        i.chains,
+        COALESCE(i.asn, g.asn) as asn,
+        CASE
+          WHEN g.country IS NOT NULL THEN
+            json_array(
+              g.country,
+              COALESCE(g.country_name, g.country),
+              COALESCE(g.city, ''),
+              COALESCE(g.as_name, '')
+            )
+          ELSE
+            NULL
+        END as geoIPData
+      FROM rule_ip_traffic rit
+      LEFT JOIN ip_stats i ON rit.backend_id = i.backend_id AND rit.ip = i.ip
+      LEFT JOIN geoip_cache g ON rit.ip = g.ip
+      WHERE rit.backend_id = ? AND rit.rule = ?
+      ORDER BY (rit.total_upload + rit.total_download) DESC
+      LIMIT ?
+    `);
+
+    const rows = stmt.all(backendId, rule, limit) as Array<{
+      ip: string;
+      totalUpload: number;
+      totalDownload: number;
+      totalConnections: number;
+      lastSeen: string;
+      domains: string | null;
+      chains: string | null;
+      asn: string | null;
+      geoIPData: string | null;
+    }>;
+
+    return rows.map(row => ({
+      ip: row.ip,
+      totalUpload: row.totalUpload,
+      totalDownload: row.totalDownload,
+      totalConnections: row.totalConnections,
+      lastSeen: row.lastSeen,
+      domains: row.domains ? row.domains.split(',').filter(Boolean) : [],
+      chains: row.chains ? row.chains.split(',').filter(Boolean) : [],
+      asn: row.asn || undefined,
+      geoIP: row.geoIPData ? JSON.parse(row.geoIPData).filter(Boolean) : undefined,
+    })) as IPStats[];
+  }
+
+  // Get rule chain flow for visualization
+  getRuleChainFlow(backendId: number, rule: string): { nodes: Array<{ name: string; totalUpload: number; totalDownload: number; totalConnections: number }>; links: Array<{ source: number; target: number }> } {
+    // Query rule_chain_traffic for accurate per-rule chain flow data
+    const stmt = this.db.prepare(`
+      SELECT chain, total_upload as totalUpload, total_download as totalDownload, total_connections as totalConnections
+      FROM rule_chain_traffic
+      WHERE backend_id = ? AND rule = ?
+    `);
+
+    const rows = stmt.all(backendId, rule) as Array<{
+      chain: string;
+      totalUpload: number;
+      totalDownload: number;
+      totalConnections: number;
+    }>;
+
+    const nodeMap = new Map<string, { name: string; totalUpload: number; totalDownload: number; totalConnections: number }>();
+    const linkSet = new Set<string>();
+
+    for (const row of rows) {
+      // chain is stored as "proxy > group > rule" - parse and reverse to "rule > group > proxy"
+      const chainParts = row.chain.split(' > ').map(p => p.trim()).filter(Boolean);
+      if (chainParts.length === 0) continue;
+
+      // Find the rule in the chain and reverse the flow
+      const ruleIndex = chainParts.findIndex(part => part === rule);
+      if (ruleIndex === -1) continue;
+
+      const flowPath = chainParts.slice(0, ruleIndex + 1).reverse();
+
+      for (let i = 0; i < flowPath.length; i++) {
+        const nodeName = flowPath[i];
+        if (!nodeMap.has(nodeName)) {
+          nodeMap.set(nodeName, { name: nodeName, totalUpload: 0, totalDownload: 0, totalConnections: 0 });
+        }
+        const node = nodeMap.get(nodeName)!;
+        node.totalUpload += row.totalUpload;
+        node.totalDownload += row.totalDownload;
+        node.totalConnections += row.totalConnections;
+      }
+
+      for (let i = 0; i < flowPath.length - 1; i++) {
+        linkSet.add(`${flowPath[i]}|${flowPath[i + 1]}`);
+      }
+    }
+
+    const nodes = Array.from(nodeMap.values());
+    const nodeIndexMap = new Map(nodes.map((n, i) => [n.name, i]));
+
+    const links = Array.from(linkSet).map(linkStr => {
+      const [sourceName, targetName] = linkStr.split('|');
+      return { source: nodeIndexMap.get(sourceName)!, target: nodeIndexMap.get(targetName)! };
+    });
+
+    return { nodes, links };
+  }
+
+  // Get all rule chain flows merged into a unified DAG
+  getAllRuleChainFlows(backendId: number): {
+    nodes: Array<{ name: string; layer: number; nodeType: 'rule' | 'group' | 'proxy'; totalUpload: number; totalDownload: number; totalConnections: number; rules: string[] }>;
+    links: Array<{ source: number; target: number; rules: string[] }>;
+    rulePaths: Record<string, { nodeIndices: number[]; linkIndices: number[] }>;
+    maxLayer: number;
+  } {
+    // Query rule_chain_traffic for accurate per-rule data
+    const stmt = this.db.prepare(`
+      SELECT rule, chain, total_upload as totalUpload, total_download as totalDownload, total_connections as totalConnections
+      FROM rule_chain_traffic
+      WHERE backend_id = ?
+    `);
+
+    const rows = stmt.all(backendId) as Array<{
+      rule: string;
+      chain: string;
+      totalUpload: number;
+      totalDownload: number;
+      totalConnections: number;
+    }>;
+
+    // nodeMap: name -> { stats + rules set + max layer }
+    const nodeMap = new Map<string, {
+      totalUpload: number; totalDownload: number; totalConnections: number;
+      rules: Set<string>; layer: number;
+    }>();
+    // linkMap: "source|target" -> rules set
+    const linkMap = new Map<string, Set<string>>();
+    // rulePaths: rule -> Set of node names, Set of link keys
+    const rulePathNodes = new Map<string, Set<string>>();
+    const rulePathLinks = new Map<string, Set<string>>();
+
+    for (const row of rows) {
+      const rule = row.rule;
+      if (!rulePathNodes.has(rule)) {
+        rulePathNodes.set(rule, new Set());
+        rulePathLinks.set(rule, new Set());
+      }
+
+      const chainParts = row.chain.split(' > ').map(p => p.trim()).filter(Boolean);
+      if (chainParts.length === 0) continue;
+
+      const ruleIndex = chainParts.findIndex(part => part === rule);
+      if (ruleIndex === -1) continue;
+
+      // Chain stored as: proxy > ... > rule, reverse to: rule > ... > proxy
+      const flowPath = chainParts.slice(0, ruleIndex + 1).reverse();
+      if (flowPath.length < 2) continue;
+
+      for (let i = 0; i < flowPath.length; i++) {
+        const nodeName = flowPath[i];
+        if (!nodeMap.has(nodeName)) {
+          nodeMap.set(nodeName, {
+            totalUpload: 0, totalDownload: 0, totalConnections: 0,
+            rules: new Set(), layer: i,
+          });
+        }
+        const node = nodeMap.get(nodeName)!;
+        node.totalUpload += row.totalUpload;
+        node.totalDownload += row.totalDownload;
+        node.totalConnections += row.totalConnections;
+        node.rules.add(rule);
+        node.layer = Math.max(node.layer, i);
+
+        rulePathNodes.get(rule)!.add(nodeName);
+      }
+
+      for (let i = 0; i < flowPath.length - 1; i++) {
+        const linkKey = `${flowPath[i]}|${flowPath[i + 1]}`;
+        if (!linkMap.has(linkKey)) {
+          linkMap.set(linkKey, new Set());
+        }
+        linkMap.get(linkKey)!.add(rule);
+        rulePathLinks.get(rule)!.add(linkKey);
+      }
+    }
+
+    // Determine node types and fix layer assignments
+    const nodeEntries = Array.from(nodeMap.entries());
+    const nodeTypeMap = new Map<string, 'rule' | 'group' | 'proxy'>();
+    let computedMaxLayer = 0;
+
+    for (const [name, data] of nodeEntries) {
+      const hasOutgoing = Array.from(linkMap.keys()).some(k => k.startsWith(name + '|'));
+      const hasIncoming = Array.from(linkMap.keys()).some(k => k.endsWith('|' + name));
+
+      if (!hasIncoming) {
+        nodeTypeMap.set(name, 'rule');
+        data.layer = 0;
+      } else if (!hasOutgoing) {
+        nodeTypeMap.set(name, 'proxy');
+      } else {
+        nodeTypeMap.set(name, 'group');
+      }
+      computedMaxLayer = Math.max(computedMaxLayer, data.layer);
+    }
+
+    // Force all proxy nodes to the rightmost column
+    for (const [name, data] of nodeEntries) {
+      if (nodeTypeMap.get(name) === 'proxy') {
+        data.layer = computedMaxLayer;
+      }
+    }
+
+    // Convert to arrays
+    const nodes = nodeEntries.map(([name, data]) => ({
+      name,
+      layer: data.layer,
+      nodeType: nodeTypeMap.get(name)!,
+      totalUpload: data.totalUpload,
+      totalDownload: data.totalDownload,
+      totalConnections: data.totalConnections,
+      rules: Array.from(data.rules),
+    }));
+
+    const nodeIndexMap = new Map(nodes.map((n, i) => [n.name, i]));
+
+    const links = Array.from(linkMap.entries()).map(([key, rules]) => {
+      const [sourceName, targetName] = key.split('|');
+      return {
+        source: nodeIndexMap.get(sourceName)!,
+        target: nodeIndexMap.get(targetName)!,
+        rules: Array.from(rules),
+      };
+    });
+
+    // Build rulePaths with index references
+    const rulePaths: Record<string, { nodeIndices: number[]; linkIndices: number[] }> = {};
+    for (const [rule, nodeNames] of rulePathNodes) {
+      const nodeIndices = Array.from(nodeNames).map(n => nodeIndexMap.get(n)!).filter(i => i !== undefined);
+      const linkIndices: number[] = [];
+      const linkKeys = rulePathLinks.get(rule)!;
+      links.forEach((link, idx) => {
+        const sourceName = nodes[link.source].name;
+        const targetName = nodes[link.target].name;
+        if (linkKeys.has(`${sourceName}|${targetName}`)) {
+          linkIndices.push(idx);
+        }
+      });
+      rulePaths[rule] = { nodeIndices, linkIndices };
+    }
+
+    const maxLayer = nodes.reduce((max, n) => Math.max(max, n.layer), 0);
+
+    return { nodes, links, rulePaths, maxLayer };
+  }
+
   // Get recent connections for a specific backend
   getRecentConnections(backendId: number, limit = 100): Connection[] {
     const stmt = this.db.prepare(`
@@ -1539,6 +2270,11 @@ export class StatsDatabase {
 
         const rulesStmt = this.db.prepare(`DELETE FROM rule_stats WHERE backend_id = ?`);
         deletedRules = rulesStmt.run(backendId).changes;
+
+        // Clear rule cross-reference tables
+        this.db.prepare(`DELETE FROM rule_chain_traffic WHERE backend_id = ?`).run(backendId);
+        this.db.prepare(`DELETE FROM rule_domain_traffic WHERE backend_id = ?`).run(backendId);
+        this.db.prepare(`DELETE FROM rule_ip_traffic WHERE backend_id = ?`).run(backendId);
       } else {
         const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
         const connectionsStmt = this.db.prepare(`DELETE FROM connection_logs WHERE backend_id = ? AND timestamp < ?`);
@@ -1568,6 +2304,11 @@ export class StatsDatabase {
 
         const rulesStmt = this.db.prepare(`DELETE FROM rule_stats`);
         deletedRules = rulesStmt.run().changes;
+
+        // Clear rule cross-reference tables
+        this.db.prepare(`DELETE FROM rule_chain_traffic`).run();
+        this.db.prepare(`DELETE FROM rule_domain_traffic`).run();
+        this.db.prepare(`DELETE FROM rule_ip_traffic`).run();
       } else {
         const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
         const connectionsStmt = this.db.prepare(`DELETE FROM connection_logs WHERE timestamp < ?`);
@@ -1810,6 +2551,9 @@ export class StatsDatabase {
       this.db.prepare(`DELETE FROM proxy_stats WHERE backend_id = ?`).run(id);
       this.db.prepare(`DELETE FROM rule_stats WHERE backend_id = ?`).run(id);
       this.db.prepare(`DELETE FROM rule_proxy_map WHERE backend_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM rule_chain_traffic WHERE backend_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM rule_domain_traffic WHERE backend_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM rule_ip_traffic WHERE backend_id = ?`).run(id);
       this.db.prepare(`DELETE FROM country_stats WHERE backend_id = ?`).run(id);
       this.db.prepare(`DELETE FROM hourly_stats WHERE backend_id = ?`).run(id);
       this.db.prepare(`DELETE FROM connection_logs WHERE backend_id = ?`).run(id);

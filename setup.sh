@@ -264,10 +264,26 @@ ask_start() {
     fi
 }
 
+# Download docker-compose.yml if not present
+download_compose_file() {
+    if [ ! -f "docker-compose.yml" ]; then
+        print_info "Downloading docker-compose.yml..."
+        if command -v curl &> /dev/null; then
+            curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/foru17/clash-master/main/docker-compose.yml
+        elif command -v wget &> /dev/null; then
+            wget -qO docker-compose.yml https://raw.githubusercontent.com/foru17/clash-master/main/docker-compose.yml
+        else
+            print_error "Neither curl nor wget is available"
+            exit 1
+        fi
+        print_success "docker-compose.yml downloaded"
+    fi
+}
+
 # Main function
 main() {
     show_welcome
-    
+
     # Check if Docker is installed
     if ! command -v docker &> /dev/null; then
         print_error "Docker is not installed"
@@ -277,14 +293,14 @@ main() {
         echo ""
         exit 1
     fi
-    
+
     # Check docker-compose
     if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
         print_error "Docker Compose is not installed"
         echo ""
         exit 1
     fi
-    
+
     # Check if .env already exists
     if [ -f ".env" ]; then
         print_warning "Existing .env file detected"
@@ -296,17 +312,18 @@ main() {
             exit 0
         fi
     fi
-    
+
     # Check ports
     check_ports
-    
+
     # Create configuration
     create_env_file
     create_data_dir
-    
+    download_compose_file
+
     # Show summary
     show_summary
-    
+
     # Ask to start
     ask_start
 }

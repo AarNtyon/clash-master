@@ -24,7 +24,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useVersionCheck } from "@/hooks/use-version-check";
+import { usePWAInstall } from "@/hooks/use-pwa-install";
 
 interface NavigationProps {
   activeTab: string;
@@ -37,10 +44,10 @@ const GITHUB_URL = "https://github.com/foru17/clash-master";
 
 const NAV_ITEMS = [
   { id: "overview", icon: LayoutDashboard },
+  { id: "rules", icon: Route },
   { id: "domains", icon: Globe },
   { id: "countries", icon: MapPin },
   { id: "proxies", icon: Server },
-  { id: "rules", icon: Route },
 ];
 
 export function Navigation({
@@ -56,6 +63,8 @@ export function Navigation({
   const aboutT = useTranslations("about");
   const { latestVersion, hasUpdate, isChecking, stars, checkNow } =
     useVersionCheck(APP_VERSION);
+  const { canInstall, promptInstall } = usePWAInstall();
+  const pwaT = useTranslations("pwa");
 
   return (
     <>
@@ -101,6 +110,32 @@ export function Navigation({
             );
           })}
         </nav>
+
+        {/* PWA Install Prompt */}
+        {canInstall && (
+          <div className="px-4 pb-3">
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={promptInstall}
+                    className="group w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-primary/8 to-primary/4 hover:from-primary/14 hover:to-primary/8 border border-primary/15 hover:border-primary/30">
+                    <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-primary/10 group-hover:bg-primary/15 transition-colors">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-primary">
+                        <path d="M8 1.5v8m0 0L5 6.5m3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </span>
+                    <span className="text-primary/90">{pwaT("installApp")}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-[200px]">
+                  <p className="text-xs">{pwaT("tooltip")}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        )}
 
         {/* Bottom Actions */}
         <div className="p-4 border-t border-border/40 space-y-1">

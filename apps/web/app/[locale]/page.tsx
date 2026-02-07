@@ -28,6 +28,7 @@ import { OverviewTab } from "@/components/overview";
 import { TopDomainsChart } from "@/components/top-domains-chart";
 import { ProxyStatsChart } from "@/components/proxy-stats-chart";
 import { InteractiveProxyStats } from "@/components/interactive-proxy-stats";
+import { InteractiveRuleStats } from "@/components/interactive-rule-stats";
 import { RuleChainChart } from "@/components/rule-chain-chart";
 import { WorldTrafficMap } from "@/components/world-traffic-map";
 import { CountryTrafficList } from "@/components/country-traffic-list";
@@ -110,8 +111,10 @@ const OverviewContent = memo(function OverviewContent({
 
 const DomainsContent = memo(function DomainsContent({
   data,
+  activeBackendId,
 }: {
   data: StatsSummary | null;
+  activeBackendId?: number;
 }) {
   const t = useTranslations("domains");
   return (
@@ -123,10 +126,10 @@ const DomainsContent = memo(function DomainsContent({
           <TabsTrigger value="ips">{t("ipList")}</TabsTrigger>
         </TabsList>
         <TabsContent value="domains" className="overflow-hidden">
-          <DomainsTable data={data?.topDomains || []} />
+          <DomainsTable activeBackendId={activeBackendId} />
         </TabsContent>
         <TabsContent value="ips" className="overflow-hidden">
-          <IPsTable data={data?.topIPs || []} />
+          <IPsTable activeBackendId={activeBackendId} />
         </TabsContent>
       </Tabs>
     </div>
@@ -175,12 +178,17 @@ const ProxiesContent = memo(function ProxiesContent({
 
 const RulesContent = memo(function RulesContent({
   data,
+  activeBackendId,
 }: {
   data: StatsSummary | null;
+  activeBackendId?: number;
 }) {
   return (
     <div className="space-y-6">
-      <RuleChainChart data={data?.ruleStats || []} />
+      <InteractiveRuleStats
+        data={data?.ruleStats || []}
+        activeBackendId={activeBackendId}
+      />
     </div>
   );
 });
@@ -332,7 +340,7 @@ export default function DashboardPage() {
           />
         );
       case "domains":
-        return <DomainsContent data={data} />;
+        return <DomainsContent data={data} activeBackendId={activeBackend?.id} />;
       case "countries":
         return <CountriesContent countryData={countryData} />;
       case "proxies":
@@ -340,7 +348,7 @@ export default function DashboardPage() {
           <ProxiesContent data={data} activeBackendId={activeBackend?.id} />
         );
       case "rules":
-        return <RulesContent data={data} />;
+        return <RulesContent data={data} activeBackendId={activeBackend?.id} />;
       case "network":
         return <NetworkContent />;
       default:

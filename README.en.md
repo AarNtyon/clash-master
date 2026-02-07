@@ -23,17 +23,12 @@
 </p>
 
 ![Clash Master Overview](./assets/clash-master-overview.png)
-
-## 🤔 Preface
-
-From concept to this complete version, this project took only **4 hours**. The core MVP was completed in just **1 hour** ([Tweet](https://x.com/luoleiorg/status/2019418455276204185)).
-
-Thanks to [@Kai](https://x.com/real_kai42) for providing [Kimi Code](https://www.kimi.com/code/console) Allegretto subscription support.
-
-Throughout the entire development process, I didn't write a single line of code myself (didn't even open an IDE) — all handed over to [Kimi K2.5](https://www.kimi.com/code/console). As a veteran of Vibe Coding, this experience with Kimi still surprised me: **no usage limits, no Token anxiety**. Made-in-China AI, the future is promising.
+![Clash Master Rules](./assets/clash-master-rules.png)
+![Clash Master Regions](./assets/clash-master-regions.png)
 
 ## 📋 Table of Contents
 
+- [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
 - [📖 First Use](#-first-use)
 - [🔧 Port Conflict Resolution](#-port-conflict-resolution)
@@ -52,31 +47,14 @@ Throughout the entire development process, I didn't write a single line of code 
 | 🌐 **Domain Analysis**      | View traffic, associated IPs, and connection count per domain |
 | 🗺️ **IP Analysis**          | ASN, geo-location, and associated domain display              |
 | 🚀 **Proxy Statistics**     | Traffic distribution and connection count per proxy node      |
+| 📱 **PWA Support**          | Install as desktop app for native experience                  |
 | 🌙 **Dark Mode**            | Light / Dark / System theme support                           |
 | 🌍 **i18n Support**         | English / Chinese seamless switching                          |
 | 🔄 **Multi-Backend**        | Monitor multiple OpenClash backend instances simultaneously   |
 
 ## 🚀 Quick Start
 
-### Option 1: One-Click Setup Script (Recommended)
-
-The easiest way - automatically detects port conflicts and configures:
-
-```bash
-# Download and run
-curl -fsSL https://raw.githubusercontent.com/foru17/clash-master/main/setup.sh | bash
-
-# Or use wget
-wget -qO- https://raw.githubusercontent.com/foru17/clash-master/main/setup.sh | bash
-```
-
-The script will automatically:
-- ✅ Check if default ports (3000/3001/3002) are in use
-- ✅ Suggest available alternative ports
-- ✅ Create configuration file
-- ✅ Start the service
-
-### Option 2: Docker Compose (Manual)
+### Option 1: Docker Compose (Recommended)
 
 Create a `docker-compose.yml` file:
 
@@ -87,15 +65,15 @@ services:
     container_name: clash-master
     restart: unless-stopped
     ports:
-      - "3000:3000"   # Web UI
-      - "3001:3001"   # API
-      - "3002:3002"   # WebSocket
+      - "3000:3000" # Web UI
+      - "3001:3001" # API
+      - "3002:3002" # WebSocket
     volumes:
       - ./data:/app/data
     environment:
       - NODE_ENV=production
       - API_PORT=3001
-      - WS_PORT=3002
+      - COLLECTOR_WS_PORT=3002
       - DB_PATH=/app/data/stats.db
 ```
 
@@ -105,7 +83,7 @@ Then run:
 docker compose up -d
 ```
 
-Open `http://localhost:3000` to get started.
+Open <http://localhost:3000> to get started.
 
 ### Option 2: Docker Run
 
@@ -120,9 +98,28 @@ docker run -d \
   foru17/clash-master:latest
 ```
 
-Open `http://localhost:3000` to get started.
+Open <http://localhost:3000> to get started.
 
-### Option 3: Source Code
+### Option 3: One-Click Script
+
+Automatically detects port conflicts and configures everything:
+
+```bash
+# Using curl
+curl -fsSL https://raw.githubusercontent.com/foru17/clash-master/main/setup.sh | bash
+
+# Or using wget
+wget -qO- https://raw.githubusercontent.com/foru17/clash-master/main/setup.sh | bash
+```
+
+The script will automatically:
+
+- ✅ Download `docker-compose.yml`
+- ✅ Check if default ports (3000/3001/3002) are in use
+- ✅ Suggest available alternative ports
+- ✅ Create configuration file and start the service
+
+### Option 4: Source Code
 
 ```bash
 # 1. Clone the repository
@@ -132,11 +129,11 @@ cd clash-master
 # 2. Install dependencies
 pnpm install
 
-# 3. Start services
-./start.sh
-
-# 4. Open http://localhost:3000 to configure
+# 3. Start development services
+pnpm dev
 ```
+
+Open <http://localhost:3000> to configure.
 
 ## 📖 First Use
 
@@ -158,23 +155,9 @@ pnpm install
 
 If you see "port already in use" error, here are the solutions:
 
-### Solution 1: Use One-Click Script (Easiest)
+### Solution 1: Use .env File
 
-```bash
-./setup.sh
-```
-
-The script will automatically detect and suggest available ports.
-
-### Solution 2: Use .env File
-
-Create a `.env` file:
-
-```bash
-cp .env.example .env
-```
-
-Modify ports to your preferred values:
+Create a `.env` file in the same directory as `docker-compose.yml`:
 
 ```env
 WEB_EXTERNAL_PORT=8080    # Change Web UI port
@@ -189,18 +172,26 @@ docker compose down
 docker compose up -d
 ```
 
-Now access http://localhost:8080
+Now access <http://localhost:8080>
 
-### Solution 3: Directly modify docker-compose.yml
+### Solution 2: Directly Modify docker-compose.yml
 
 ```yaml
 ports:
-  - "8080:3000"  # External 8080 → Internal 3000
-  - "8081:3001"  # External 8081 → Internal 3001
-  - "8082:3002"  # External 8082 → Internal 3002
+  - "8080:3000" # External 8080 → Internal 3000
+  - "8081:3001" # External 8081 → Internal 3001
+  - "8082:3002" # External 8082 → Internal 3002
 environment:
-  - NEXT_PUBLIC_WS_PORT=8082  # Tell frontend to use 8082
+  - NEXT_PUBLIC_WS_PORT=8082 # Tell frontend to use 8082
 ```
+
+### Solution 3: Use One-Click Script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/foru17/clash-master/main/setup.sh | bash
+```
+
+The script will automatically detect and suggest available ports.
 
 ## 🐳 Docker Configuration
 
@@ -211,6 +202,10 @@ environment:
 | 3000 |  Web UI   |    ✅    | Frontend access port        |
 | 3001 |    API    |    ✅    | REST API port               |
 | 3002 | WebSocket |    ✅    | Real-time data transmission |
+
+### Multi-Architecture Support
+
+Docker images support both `linux/amd64` and `linux/arm64`.
 
 ### Data Persistence
 
@@ -229,39 +224,16 @@ docker compose pull
 docker compose up -d
 ```
 
-> 💡 New images are automatically built and pushed to [Docker Hub](https://hub.docker.com/r/foru17/clash-master) on every push to `main` or new tag.
-
-## 📁 Project Structure
-
-```
-clash-master/
-├── docker-compose.yml      # Docker Compose config
-├── Dockerfile              # Docker image build
-├── docker-start.sh         # Docker startup script
-├── start.sh                # Source startup script
-├── assets/                 # Screenshots and icons
-├── apps/
-│   ├── collector/          # Data collection service (Node.js + WebSocket)
-│   └── web/                # Next.js frontend app
-└── packages/
-    └── shared/             # Shared types and utilities
-```
-
 ## ❓ FAQ
 
 ### Q: "Port already in use" error?
 
-**A:** Use the one-click setup script, it will automatically detect and suggest available ports:
-
-```bash
-./setup.sh
-```
-
-Or manually modify ports in `.env` file.
+**A:** See [Port Conflict Resolution](#-port-conflict-resolution) above. The simplest approach is to create a `.env` file with custom ports.
 
 ### Q: Cannot access after changing ports?
 
 **A:** Make sure three things:
+
 1. Ports are modified in `.env` file
 2. Service is restarted: `docker compose restart`
 3. You're using the new port (e.g., `http://localhost:8080`)
@@ -269,6 +241,7 @@ Or manually modify ports in `.env` file.
 ### Q: Failed to connect to OpenClash?
 
 **A:** Check the following:
+
 1. Is "External Control" enabled in OpenClash?
 2. Is the OpenClash address correct? (Format: `IP:Port`)
 3. If Secret is configured, is the Token correct?
@@ -277,6 +250,7 @@ Or manually modify ports in `.env` file.
 ### Q: How to view service logs?
 
 **A:**
+
 ```bash
 # View all logs
 docker logs -f clash-master
@@ -296,17 +270,31 @@ cp -r ./data ./data-backup-$(date +%Y%m%d)
 ### Q: How to clean up historical data?
 
 **A:**
-1. Click "Backend Config" at the bottom of the left sidebar
+
+1. Click "Settings" at the bottom of the left sidebar
 2. Switch to the "Database" tab
 3. Select cleanup range: 1 day / 7 days / 30 days / All
 
-### Q: Support ARM architecture?
+## 📁 Project Structure
 
-**A:** Docker images support `linux/amd64` and `linux/arm64`.
+```
+clash-master/
+├── docker-compose.yml      # Docker Compose config
+├── Dockerfile              # Docker image build
+├── setup.sh                # One-click setup script
+├── docker-start.sh         # Docker container startup script
+├── start.sh                # Source code dev startup script
+├── assets/                 # Screenshots and icons
+├── apps/
+│   ├── collector/          # Data collection service (Node.js + WebSocket)
+│   └── web/                # Next.js frontend app
+└── packages/
+    └── shared/             # Shared types and utilities
+```
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: [Next.js 15](https://nextjs.org/) + [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- **Frontend**: [Next.js 16](https://nextjs.org/) + [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/)
 - **Charts**: [Recharts](https://recharts.org/)
 - **i18n**: [next-intl](https://next-intl-docs.vercel.app/)

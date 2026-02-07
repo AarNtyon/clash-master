@@ -167,9 +167,18 @@
   },
   "rules": {
     "title": "规则",
-    "distribution": "规则链路分布",
+    "distribution": "规则流量分布",
+    "ruleList": "规则列表",
+    "topDomains": "热门域名",
     "description": "按匹配规则和最终代理节点的流量分布",
-    "connections": "连接"
+    "connections": "连接",
+    "noData": "暂无数据",
+    "total": "总计",
+    "download": "下载",
+    "upload": "上传",
+    "chainFlow": "规则链路流向",
+    "loadingChainFlow": "加载链路流向...",
+    "showAll": "显示全部"
   },
   "network": {
     "title": "网络",
@@ -185,6 +194,10 @@
     "traffic": "流量：",
     "low": "低",
     "high": "高"
+  },
+  "pwa": {
+    "installApp": "安装应用",
+    "tooltip": "安装为桌面应用，享受更快的访问速度和原生体验"
   },
   "about": {
     "title": "关于",

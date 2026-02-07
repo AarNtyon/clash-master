@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Search, ArrowUpDown, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Rows3, Globe, Server, ChevronDown, ChevronUp, Link2, Waypoints, Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 interface IPsTableProps {
-  data: IPStats[];
+  activeBackendId?: number;
 }
 
 type SortKey = "ip" | "totalDownload" | "totalUpload" | "totalConnections" | "lastSeen";
@@ -69,9 +69,13 @@ function getCountryFlag(country: string): string {
   return COUNTRY_FLAGS[country] || COUNTRY_FLAGS[country.toUpperCase()] || "🌐";
 }
 
-export function IPsTable({ data }: IPsTableProps) {
+export function IPsTable({ activeBackendId }: IPsTableProps) {
   const t = useTranslations("ips");
+  const [data, setData] = useState<IPStats[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("totalDownload");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -79,10 +83,51 @@ export function IPsTable({ data }: IPsTableProps) {
   const [expandedIP, setExpandedIP] = useState<string | null>(null);
   const [proxyStats, setProxyStats] = useState<Record<string, ProxyTrafficStats[]>>({});
   const [proxyStatsLoading, setProxyStatsLoading] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce search input
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setCurrentPage(1);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search]);
+
+  // Fetch data from server
+  useEffect(() => {
+    let cancelled = false;
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const result = await api.getIPs(activeBackendId, {
+          offset: (currentPage - 1) * pageSize,
+          limit: pageSize,
+          sortBy: sortKey,
+          sortOrder,
+          search: debouncedSearch || undefined,
+        });
+        if (!cancelled) {
+          setData(result.data);
+          setTotal(result.total);
+        }
+      } catch (err) {
+        console.error("Failed to fetch IPs:", err);
+        if (!cancelled) {
+          setData([]);
+          setTotal(0);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    fetchData();
+    return () => { cancelled = true; };
+  }, [activeBackendId, currentPage, pageSize, sortKey, sortOrder, debouncedSearch]);
 
   // Fetch proxy stats when an IP is expanded
   const fetchProxyStats = useCallback(async (ip: string) => {
-    if (proxyStats[ip]) return; // Already cached
+    if (proxyStats[ip]) return;
     setProxyStatsLoading(ip);
     try {
       const stats = await api.getIPProxyStats(ip);
@@ -105,34 +150,10 @@ export function IPsTable({ data }: IPsTableProps) {
     setCurrentPage(1);
   };
 
-  const filteredData = useMemo(() => {
-    return (data || [])
-      .filter((ip) =>
-        ip.ip.toLowerCase().includes(search.toLowerCase()) ||
-        ip.domains.some((d) => d.toLowerCase().includes(search.toLowerCase()))
-      )
-      .sort((a, b) => {
-        const aValue = a[sortKey];
-        const bValue = b[sortKey];
-        const modifier = sortOrder === "asc" ? 1 : -1;
-        
-        if (typeof aValue === "string" && typeof bValue === "string") {
-          return aValue.localeCompare(bValue) * modifier;
-        }
-        return ((aValue as number) - (bValue as number)) * modifier;
-      });
-  }, [data, search, sortKey, sortOrder]);
-
-  // Pagination
-  const totalPages = Math.ceil(filteredData.length / pageSize);
-  const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredData.slice(start, start + pageSize);
-  }, [filteredData, currentPage, pageSize]);
+  const totalPages = Math.ceil(total / pageSize);
 
   const handleSearchChange = (value: string) => {
     setSearch(value);
-    setCurrentPage(1);
   };
 
   const handlePageSizeChange = (size: PageSize) => {
@@ -161,7 +182,7 @@ export function IPsTable({ data }: IPsTableProps) {
   const getPageNumbers = () => {
     const pages: (number | string)[] = [];
     const maxVisible = 5;
-    
+
     if (totalPages <= maxVisible) {
       for (let i = 1; i <= totalPages; i++) pages.push(i);
     } else {
@@ -192,7 +213,7 @@ export function IPsTable({ data }: IPsTableProps) {
           <div>
             <h3 className="text-lg font-semibold">{t("title")}</h3>
             <p className="text-sm text-muted-foreground">
-              {filteredData.length} {t("ipsCount")}
+              {total} {t("ipsCount")}
             </p>
           </div>
           <div className="relative">
@@ -209,7 +230,7 @@ export function IPsTable({ data }: IPsTableProps) {
 
       {/* Desktop Table Header */}
       <div className="hidden sm:grid grid-cols-12 gap-3 px-5 py-3 bg-secondary/30 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        <div 
+        <div
           className="col-span-3 flex items-center cursor-pointer hover:text-foreground transition-colors"
           onClick={() => handleSort("ip")}
         >
@@ -222,14 +243,14 @@ export function IPsTable({ data }: IPsTableProps) {
         <div className="col-span-1 flex items-center">
           {t("location")}
         </div>
-        <div 
+        <div
           className="col-span-2 flex items-center justify-end cursor-pointer hover:text-foreground transition-colors"
           onClick={() => handleSort("totalDownload")}
         >
           {t("download")}
           <SortIcon column="totalDownload" />
         </div>
-        <div 
+        <div
           className="col-span-1 flex items-center justify-end cursor-pointer hover:text-foreground transition-colors"
           onClick={() => handleSort("totalUpload")}
         >
@@ -275,15 +296,19 @@ export function IPsTable({ data }: IPsTableProps) {
 
       {/* Table Body */}
       <div className="divide-y divide-border/30 min-h-[300px]">
-        {paginatedData.length === 0 ? (
+        {loading && data.length === 0 ? (
+          <div className="px-5 py-12 text-center text-muted-foreground">
+            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+          </div>
+        ) : data.length === 0 ? (
           <div className="px-5 py-12 text-center text-muted-foreground">
             {t("noResults")}
           </div>
         ) : (
-          paginatedData.map((ip, index) => {
+          data.map((ip, index) => {
             const ipColor = getIPColor(ip.ip);
             const isExpanded = expandedIP === ip.ip;
-            
+
             return (
               <div key={ip.ip} className="group">
                 {/* Desktop Row */}
@@ -365,8 +390,8 @@ export function IPsTable({ data }: IPsTableProps) {
                       size="sm"
                       className={cn(
                         "h-7 px-2 gap-1 text-xs font-medium transition-all",
-                        isExpanded 
-                          ? "bg-primary/10 text-primary hover:bg-primary/20" 
+                        isExpanded
+                          ? "bg-primary/10 text-primary hover:bg-primary/20"
                           : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
                       )}
                       onClick={(e) => {
@@ -406,8 +431,8 @@ export function IPsTable({ data }: IPsTableProps) {
                       size="sm"
                       className={cn(
                         "h-7 px-2 gap-1 text-xs font-medium shrink-0",
-                        isExpanded 
-                          ? "bg-primary/10 text-primary" 
+                        isExpanded
+                          ? "bg-primary/10 text-primary"
                           : "bg-secondary/50 text-muted-foreground"
                       )}
                       onClick={(e) => {
@@ -589,19 +614,19 @@ export function IPsTable({ data }: IPsTableProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
               <span className="text-sm text-muted-foreground">
-                {t("total")} {filteredData.length}
+                {t("total")} {total}
               </span>
             </div>
-            
+
             {/* Pagination info and controls */}
             <div className="flex items-center gap-2 sm:gap-3">
               <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">
-                {t("showing")} {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredData.length)} {t("of")} {filteredData.length}
+                {t("showing")} {Math.min((currentPage - 1) * pageSize + 1, total)} - {Math.min(currentPage * pageSize, total)} {t("of")} {total}
               </p>
               <p className="text-xs text-muted-foreground sm:hidden">
-                {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredData.length)} / {filteredData.length}
+                {Math.min((currentPage - 1) * pageSize + 1, total)}-{Math.min(currentPage * pageSize, total)} / {total}
               </p>
-              
+
               <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
@@ -612,7 +637,7 @@ export function IPsTable({ data }: IPsTableProps) {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                
+
                 {getPageNumbers().map((page, idx) => (
                   page === '...' ? (
                     <span key={`ellipsis-${idx}`} className="px-1 sm:px-2 text-muted-foreground text-xs">...</span>
@@ -628,7 +653,7 @@ export function IPsTable({ data }: IPsTableProps) {
                     </Button>
                   )
                 ))}
-                
+
                 <Button
                   variant="ghost"
                   size="icon"

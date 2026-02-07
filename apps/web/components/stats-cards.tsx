@@ -1,7 +1,14 @@
 "use client";
 
+import { useRef, useEffect } from "react";
 import { Download, Upload, Globe, Activity, Server, Route } from "lucide-react";
 import { useTranslations } from "next-intl";
+import {
+  motion,
+  useSpring,
+  useTransform,
+  useMotionValue,
+} from "framer-motion";
 import { formatBytes } from "@/lib/utils";
 import type { StatsSummary } from "@clashmaster/shared";
 
@@ -9,6 +16,45 @@ interface StatsCardsProps {
   data: StatsSummary | null;
   error?: string | null;
 }
+
+// ---------- Animated number display ----------
+
+const springConfig = { stiffness: 80, damping: 20, mass: 0.5 };
+
+function AnimatedValue({
+  value,
+  formatter,
+  className,
+  title,
+}: {
+  value: number;
+  formatter: (n: number) => string;
+  className?: string;
+  title?: string;
+}) {
+  const motionValue = useMotionValue(0);
+  const spring = useSpring(motionValue, springConfig);
+  const display = useTransform(spring, (v) => formatter(Math.round(v)));
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      // Jump to initial value instantly (no animation on mount)
+      motionValue.jump(value);
+      isFirstRender.current = false;
+    } else {
+      motionValue.set(value);
+    }
+  }, [value, motionValue]);
+
+  return (
+    <motion.span className={className} title={title}>
+      {display}
+    </motion.span>
+  );
+}
+
+// ---------- Stat Card ----------
 
 function StatCard({
   value,
@@ -48,6 +94,53 @@ function StatCard({
   );
 }
 
+// ---------- Animated Stat Card (for numeric values) ----------
+
+function AnimatedStatCard({
+  value,
+  formatter,
+  label,
+  subvalue,
+  icon: Icon,
+  color,
+}: {
+  value: number;
+  formatter: (n: number) => string;
+  label: string;
+  subvalue?: string;
+  icon: React.ElementType;
+  color: string;
+}) {
+  return (
+    <div className="rounded-xl p-4 border bg-card flex flex-col">
+      <div
+        className="w-10 h-10 rounded-lg flex items-center justify-center mb-3"
+        style={{ backgroundColor: `${color}15` }}
+      >
+        <Icon className="w-5 h-5" style={{ color }} />
+      </div>
+      <div className="flex-1">
+        <p className="text-muted-foreground text-xs uppercase tracking-wider font-medium truncate">
+          {label}
+        </p>
+        <AnimatedValue
+          value={value}
+          formatter={formatter}
+          className="text-xl font-bold mt-1 tabular-nums truncate block"
+          title={formatter(value)}
+        />
+        {subvalue && (
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            {subvalue}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Circular Progress Card ----------
+
 function CircularProgressCard({
   value,
   max,
@@ -64,9 +157,24 @@ function CircularProgressCard({
   const radius = 28;
   const strokeWidth = 4;
   const circumference = radius * 2 * Math.PI;
-  const percentage = Math.min(100, Math.max(0, (value / max) * 100));
-  const offset = circumference - (percentage / 100) * circumference;
   const size = 64;
+
+  // Animated progress ring
+  const percentage = Math.min(100, Math.max(0, (value / max) * 100));
+  const targetOffset = circumference - (percentage / 100) * circumference;
+
+  const motionOffset = useMotionValue(circumference);
+  const springOffset = useSpring(motionOffset, springConfig);
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      motionOffset.jump(targetOffset);
+      isFirstRender.current = false;
+    } else {
+      motionOffset.set(targetOffset);
+    }
+  }, [targetOffset, motionOffset]);
 
   return (
     <div className="rounded-xl p-4 border bg-card flex flex-col">
@@ -82,7 +190,7 @@ function CircularProgressCard({
               fill="transparent"
               className="text-muted/15"
             />
-            <circle
+            <motion.circle
               cx={size / 2}
               cy={size / 2}
               r={radius}
@@ -90,7 +198,7 @@ function CircularProgressCard({
               strokeWidth={strokeWidth}
               fill="transparent"
               strokeDasharray={circumference}
-              strokeDashoffset={offset}
+              strokeDashoffset={springOffset}
               strokeLinecap="round"
             />
           </svg>
@@ -103,13 +211,18 @@ function CircularProgressCard({
         <p className="text-muted-foreground text-xs uppercase tracking-wider font-medium truncate">
           {label}
         </p>
-        <p className="text-xl font-bold mt-1 tabular-nums truncate" title={formatBytes(value)}>
-          {formatBytes(value)}
-        </p>
+        <AnimatedValue
+          value={value}
+          formatter={formatBytes}
+          className="text-xl font-bold mt-1 tabular-nums truncate block"
+          title={formatBytes(value)}
+        />
       </div>
     </div>
   );
 }
+
+// ---------- Today Card ----------
 
 function TodayCard({
   download,
@@ -139,21 +252,27 @@ function TodayCard({
         <div className="mt-2 space-y-1.5">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground truncate">{downloadLabel}</span>
-            <span className="text-sm font-semibold tabular-nums truncate">
-              {formatBytes(download)}
-            </span>
+            <AnimatedValue
+              value={download}
+              formatter={formatBytes}
+              className="text-sm font-semibold tabular-nums truncate"
+            />
           </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground truncate">{uploadLabel}</span>
-            <span className="text-sm font-semibold tabular-nums truncate">
-              {formatBytes(upload)}
-            </span>
+            <AnimatedValue
+              value={upload}
+              formatter={formatBytes}
+              className="text-sm font-semibold tabular-nums truncate"
+            />
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+// ---------- Main ----------
 
 export function StatsCards({ data }: StatsCardsProps) {
   const t = useTranslations("stats");
@@ -186,21 +305,24 @@ export function StatsCards({ data }: StatsCardsProps) {
         downloadLabel={t("download")}
         uploadLabel={t("upload")}
       />
-      <StatCard
-        value={(data?.totalDomains || 0).toLocaleString()}
+      <AnimatedStatCard
+        value={data?.totalDomains || 0}
+        formatter={(n) => n.toLocaleString()}
         label={t("domains")}
         icon={Globe}
         color="#06B6D4"
       />
-      <StatCard
-        value={(data?.totalRules || 0).toLocaleString()}
+      <AnimatedStatCard
+        value={data?.totalRules || 0}
+        formatter={(n) => n.toLocaleString()}
         label={t("rules")}
         subvalue={t("tracked")}
         icon={Route}
         color="#F59E0B"
       />
-      <StatCard
-        value={formatBytes((data?.totalDownload || 0) + (data?.totalUpload || 0))}
+      <AnimatedStatCard
+        value={(data?.totalDownload || 0) + (data?.totalUpload || 0)}
+        formatter={formatBytes}
         label={t("total")}
         subvalue={`${(data?.totalDomains || 0)} ${t("tracked")}`}
         icon={Server}
