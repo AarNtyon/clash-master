@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { Link2, ArrowDown, ArrowUp } from "lucide-react";
+import { Link2 } from "lucide-react";
 import { CountryFlag } from "@/components/country-flag";
 import { formatBytes, formatNumber } from "@/lib/utils";
 import type { CountryStats } from "@clashmaster/shared";
 
 interface CountryTrafficListProps {
   data: CountryStats[];
+  sortBy?: "traffic" | "connections";
 }
 
 // Continent colors
@@ -21,11 +22,10 @@ function getContinentColor(continent: string): string {
   return CONTINENT_COLORS[continent] || CONTINENT_COLORS.Unknown;
 }
 
-function formatBytesNoWrap(value: number): string {
-  return formatBytes(value).replace(" ", "\u00A0");
-}
-
-export function CountryTrafficList({ data }: CountryTrafficListProps) {
+export function CountryTrafficList({
+  data,
+  sortBy = "traffic",
+}: CountryTrafficListProps) {
   const countries = useMemo(() => {
     if (!data) return [];
     return data
@@ -35,8 +35,13 @@ export function CountryTrafficList({ data }: CountryTrafficListProps) {
         color: getContinentColor(country.continent),
         total: country.totalDownload + country.totalUpload,
       }))
-      .sort((a, b) => b.total - a.total);
-  }, [data]);
+      .sort((a, b) => {
+        if (sortBy === "connections") {
+          return b.totalConnections - a.totalConnections;
+        }
+        return b.total - a.total;
+      });
+  }, [data, sortBy]);
 
   const totalTraffic = useMemo(() => {
     return countries.reduce((sum, c) => sum + c.total, 0);
@@ -44,7 +49,7 @@ export function CountryTrafficList({ data }: CountryTrafficListProps) {
 
   if (countries.length === 0) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
         {[...Array(6)].map((_, i) => (
           <div key={i} className="p-3 rounded-xl border border-border/30 bg-muted/50 h-24" />
         ))}
@@ -53,31 +58,34 @@ export function CountryTrafficList({ data }: CountryTrafficListProps) {
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
       {countries.map((country) => {
         const percentage = totalTraffic > 0 ? (country.total / totalTraffic) * 100 : 0;
         
         return (
           <div
             key={country.country}
-            className="p-3 rounded-xl border border-border/50 bg-card/30 hover:bg-card/60 transition-colors"
+            className="p-3 rounded-xl border border-border/50 bg-card/50 hover:bg-card transition-colors"
           >
-            {/* Header: Flag + Name */}
+            {/* Header: Flag + Name + Total */}
             <div className="flex items-center gap-2 mb-2">
               <CountryFlag country={country.country} className="h-4 w-6" />
-              <p className="font-medium text-sm truncate" title={country.countryName}>
+              <p className="flex-1 font-medium text-sm truncate" title={country.countryName || country.country}>
                 {country.countryName || country.country}
               </p>
+              <span className="text-base font-bold tabular-nums whitespace-nowrap shrink-0 sm:hidden">
+                {formatBytes(country.total)}
+              </span>
             </div>
 
             {/* Traffic Stats */}
             <div className="space-y-1.5">
-              {/* Total */}
-              <div className="flex items-baseline justify-between">
+              {/* Desktop total + share (keep previous layout) */}
+              <div className="hidden sm:flex items-baseline justify-between">
                 <span className="text-base sm:text-lg font-bold tabular-nums whitespace-nowrap">
-                  {formatBytesNoWrap(country.total)}
+                  {formatBytes(country.total)}
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                   {percentage.toFixed(1)}%
                 </span>
               </div>
@@ -90,22 +98,23 @@ export function CountryTrafficList({ data }: CountryTrafficListProps) {
                 />
               </div>
 
-              {/* DL/UL row */}
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-0.5 text-blue-500 whitespace-nowrap">
-                  <ArrowDown className="w-3 h-3" />
-                  {formatBytesNoWrap(country.totalDownload)}
+              {/* Metrics + Share */}
+              <div className="flex items-end justify-between text-xs">
+                <div className="flex items-center gap-2 sm:flex-col sm:items-start sm:gap-1 min-w-0">
+                  <span className="text-blue-500 tabular-nums whitespace-nowrap">
+                    ↓ {formatBytes(country.totalDownload)}
+                  </span>
+                  <span className="text-purple-500 tabular-nums whitespace-nowrap">
+                    ↑ {formatBytes(country.totalUpload)}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-muted-foreground tabular-nums whitespace-nowrap">
+                    <Link2 className="w-3 h-3" />
+                    <span>{formatNumber(country.totalConnections)}</span>
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap shrink-0 sm:hidden">
+                  {percentage.toFixed(1)}%
                 </span>
-                <span className="flex items-center gap-0.5 text-purple-500 whitespace-nowrap">
-                  <ArrowUp className="w-3 h-3" />
-                  {formatBytesNoWrap(country.totalUpload)}
-                </span>
-              </div>
-
-              {/* Connections */}
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Link2 className="w-3 h-3" />
-                <span>{formatNumber(country.totalConnections)}</span>
               </div>
             </div>
           </div>

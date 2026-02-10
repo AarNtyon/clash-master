@@ -10,6 +10,8 @@ import {
   Server,
   Route,
   Activity,
+  BarChart3,
+  Link2,
   RefreshCw,
   Radio,
   ChevronDown,
@@ -204,17 +206,52 @@ const CountriesContent = memo(function CountriesContent({
   countryData: CountryStats[];
 }) {
   const t = useTranslations("countries");
+  const [sortBy, setSortBy] = useState<"traffic" | "connections">("traffic");
   return (
     <div className="space-y-6">
       <WorldTrafficMap data={countryData} />
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold">
-            {t("details")}
-          </CardTitle>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-lg font-semibold">
+              {t("details")}
+            </CardTitle>
+            <div className="flex items-center gap-0.5 bg-muted/50 rounded-lg p-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md transition-all",
+                  sortBy === "traffic"
+                    ? "bg-background shadow-sm text-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setSortBy("traffic")}
+                title={t("sortByTraffic")}
+                aria-label={t("sortByTraffic")}
+              >
+                <BarChart3 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 rounded-md transition-all",
+                  sortBy === "connections"
+                    ? "bg-background shadow-sm text-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setSortBy("connections")}
+                title={t("sortByConnections")}
+                aria-label={t("sortByConnections")}
+              >
+                <Link2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          <CountryTrafficList data={countryData} />
+          <CountryTrafficList data={countryData} sortBy={sortBy} />
         </CardContent>
       </Card>
     </div>
@@ -637,7 +674,7 @@ export default function DashboardPage() {
         <header className="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-md">
           <div className="flex items-center justify-between h-14 px-4 lg:px-6">
             <div className="flex items-center gap-3">
-              {/* Mobile: Logo, Desktop: Page Title */}
+              {/* Mobile: Logo */}
               <div className="flex items-center gap-2">
                 <div className="lg:hidden w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center overflow-hidden">
                   <Image
@@ -648,9 +685,6 @@ export default function DashboardPage() {
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <h2 className="hidden lg:block font-semibold">
-                  {t(activeTab)}
-                </h2>
               </div>
 
               {/* Backend Selector */}

@@ -201,7 +201,9 @@
     "distribution": "地区流量分布",
     "continents": "大洲：",
     "noData": "暂无数据",
-    "connections": "连接"
+    "connections": "连接",
+    "sortByTraffic": "按流量排序",
+    "sortByConnections": "按连接数排序"
   },
   "proxies": {
     "title": "代理节点",

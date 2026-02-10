@@ -202,7 +202,9 @@
     "distribution": "Regional Traffic Distribution",
     "continents": "Continents:",
     "noData": "No data",
-    "connections": "connections"
+    "connections": "connections",
+    "sortByTraffic": "Sort by traffic",
+    "sortByConnections": "Sort by connections"
   },
   "proxies": {
     "title": "Proxies",
